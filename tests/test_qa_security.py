@@ -29,7 +29,7 @@ class QaSecurityContractTests(unittest.TestCase):
     def test_instructions_keep_honesty_hitl_and_path_rules(self):
         text = qa_security.INSTRUCTIONS
         for expected in ("NO EJECUTADO", "SPEC PRINCIPAL", "DISCOVERY", "DECISIÓN REQUERIDA", "PROPUESTO",
-                         "Wx-ACn-Tm", "nunca asumas dónde está", "AMBIGUO"):
+                         "Wx-ACn-Tm", "MAPA DEL PROYECTO", "NO preguntes por nada que el", "es ilegible o"):
             self.assertIn(expected, text)
 
     def test_instructions_apply_istqb_black_box_techniques(self):
@@ -54,7 +54,7 @@ class QaSecurityContractTests(unittest.TestCase):
     def test_task_embeds_spec_discovery_and_paths(self):
         task = qa_security.build_task(FEATURE)
         self.assertIs(task.agent, qa_security.agent)
-        for section in ("## SPEC PRINCIPAL", "## DISCOVERY (secundaria", "## RUTAS DE CÓDIGO"):
+        for section in ("## SPEC PRINCIPAL", "## DISCOVERY (secundaria", "## MAPA DEL PROYECTO"):
             self.assertIn(section, task.description)
         self.assertIn("challenge/docs/discovery/06-handoff-por-rol/qa-security.md", task.description)
         self.assertIn("NO EJECUTADO", task.expected_output)
@@ -80,7 +80,7 @@ class QaSecurityContextTests(unittest.TestCase):
         self.assertIn("SPEC PRINCIPAL NO ENCONTRADO", context)
         self.assertIn("DISCOVERY NO ENCONTRADO", context)
         self.assertIn("DECISIÓN REQUERIDA", context)
-        self.assertIn("backend-nestjs: NO ENCONTRADA", context)
+        self.assertIn("MAPA DEL PROYECTO NO ENCONTRADO", context)
 
     def test_duplicate_spec_locations_are_ambiguous(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -92,20 +92,18 @@ class QaSecurityContextTests(unittest.TestCase):
         self.assertNotIn("version A", context)
         self.assertNotIn("version B", context)
 
-    def test_discovery_and_code_dirs_are_searched(self):
+    def test_discovery_is_searched_and_ignored_dirs_are_skipped(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             base = "algun/lugar/discovery"
             write(root, base + "/06-handoff-por-rol/qa-security.md", "HANDOFF QA")
             write(root, base + "/02-producto/historias/W4-idempotencia.md", "HISTORIA W4 T2")
-            write(root, "output/backend-nestjs/package.json", "{}")
-            write(root, "node_modules/backend-nestjs/x.md", "ignorado")
+            write(root, "node_modules/otro/discovery/06-handoff-por-rol/qa-security.md", "ignorado")
             context = qa_security.build_context(FEATURE, root)
         self.assertIn("### algun/lugar/discovery/06-handoff-por-rol/qa-security.md", context)
         self.assertIn("HISTORIA W4 T2", context)
         self.assertIn("historias del alcance: W4", context)
-        self.assertIn("- backend-nestjs: output/backend-nestjs", context)
-        self.assertIn("frontend-react: NO ENCONTRADA", context)
+        self.assertNotIn("DISCOVERY AMBIGUO", context)
 
     def test_two_discovery_folders_are_ambiguous(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -256,6 +254,121 @@ class QaSecurityOpenSpecTests(unittest.TestCase):
         context = qa_security.build_context(FEATURE)
         self.assertIn("### openspec/changes/w1-onboarding-guiado/tasks.md", context)
         self.assertIn("origen: OpenSpec: cambios activos", context)
+
+
+class QaSecurityProjectMapTests(unittest.TestCase):
+    MAP = {
+        "app": {"repo_url": "https://github.com/org/mi-app", "local_path": "../mi-app", "backend_dir": "backend",
+                "frontend_dir": "frontend", "contract_file": "AGENTS.md"},
+        "run_targets": {"preference": ["url", "mcp"], "api_base_url": "http://localhost:3000", "mcp": None},
+        "qa": {"branch": "qa-security",
+               "tests": {"backend_e2e": "backend/test/<f>.e2e-spec.ts", "backend_unit": "backend/src/<f>/<n>.spec.ts",
+                         "frontend": "frontend/src/<f>/<N>.test.tsx"},
+               "run_tests_command": "python tools/wallee.py test", "test_plan": "docs/qa/p.md",
+               "evidence": "docs/qa/evidence.md", "security_review": "docs/qa/s.md", "decisions": "docs/qa/d.md"},
+    }
+
+    def build(self, tmp: str, with_app: bool = True, app_dir: str = "mi-app", branch: str = "qa-security"):
+        import json
+
+        root = Path(tmp) / "wallee"
+        write(root, "agents/qa-project-map.json", json.dumps(self.MAP))
+        if with_app:
+            app = Path(tmp) / app_dir
+            write(app, "backend/src/health/health.controller.ts", "x")
+            write(app, "backend/src/wallet/wallet.module.ts", "x")
+            write(app, "backend/test/app.e2e-spec.ts", "x")
+            write(app, "frontend/src/api/health.ts", "x")
+            write(app, "AGENTS.md", "CONTRATO: cobertura 85%")
+            write(app, ".git/HEAD", "ref: refs/heads/" + branch + "\n")
+        return root
+
+    def test_map_gives_app_paths_url_and_where_tests_go(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            context = qa_security.build_context(FEATURE, self.build(tmp))
+        self.assertIn("## MAPA DEL PROYECTO", context)
+        self.assertIn("App detectada en disco", context)
+        self.assertIn("Rama actual de la app: qa-security", context)
+        self.assertIn("health, wallet", context)
+        self.assertIn("app.e2e-spec.ts", context)
+        self.assertIn("CONTRATO: cobertura 85%", context)
+        self.assertIn("URL base http://localhost:3000", context)
+        self.assertIn("El equipo de la app la levanta; tú no", context)
+        self.assertIn("va a la rama «qa-security» del repositorio de la app (https://github.com/org/mi-app)", context)
+        self.assertIn("NO a wallee", context)
+        self.assertIn("backend/test/<f>.e2e-spec.ts", context)
+        self.assertIn("evidencia docs/qa/evidence.md", context)
+        self.assertIn("Comando de pruebas: python tools/wallee.py test", context)
+
+    def test_app_on_another_branch_is_reported_to_the_person_not_asked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            context = qa_security.build_context(FEATURE, self.build(tmp, branch="main"))
+        self.assertIn("Rama actual de la app: main", context)
+        self.assertIn("las pruebas van a la rama «qa-security»", context)
+        self.assertIn("sin preguntar", context)
+
+    def test_missing_app_is_declared_without_asking_for_the_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            context = qa_security.build_context(FEATURE, self.build(tmp, with_app=False))
+        self.assertIn("APP NO ENCONTRADA en disco", context)
+        self.assertIn("https://github.com/org/mi-app", context)
+        self.assertIn("No preguntes por la ruta", context)
+
+    def test_app_is_found_as_a_sibling_named_like_the_repository(self):
+        import json
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self.build(tmp, app_dir="mi-app")
+            moved = {**self.MAP, "app": {**self.MAP["app"], "local_path": "../otro-lugar"}}
+            write(root, "agents/qa-project-map.json", json.dumps(moved))
+            context = qa_security.build_context(FEATURE, root)
+        self.assertIn("App detectada en disco", context)
+
+    def test_missing_map_asks_instead_of_assuming(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            context = qa_security.build_context(FEATURE, Path(tmp))
+        self.assertIn("MAPA DEL PROYECTO NO ENCONTRADO", context)
+        self.assertIn("DECISIÓN REQUERIDA", context)
+
+    def test_two_or_broken_maps_are_not_guessed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root, "a/qa-project-map.json", "{}")
+            write(root, "b/qa-project-map.json", "{}")
+            self.assertIn("MAPA DEL PROYECTO AMBIGUO", qa_security.build_context(FEATURE, root))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root, "agents/qa-project-map.json", "{no es json")
+            self.assertIn("MAPA DEL PROYECTO ILEGIBLE", qa_security.build_context(FEATURE, root))
+
+    def test_real_map_is_aligned_with_the_repository_and_the_app_repo(self):
+        import json
+
+        repo = Path(qa_security.ROOT)
+        maps = qa_security.scan(repo)["map"]
+        self.assertEqual([p.relative_to(repo).as_posix() for p in maps], ["agents/qa-project-map.json"])
+        data = json.loads(maps[0].read_text(encoding="utf-8"))
+        self.assertEqual(data["qa"]["branch"], "qa-security")
+        self.assertEqual(data["app"]["repo_url"], "https://github.com/user-bcp-student09/wallee-app")
+        self.assertTrue((repo / data["real_vs_mock"]["definition"]).is_file())
+        self.assertTrue((repo / data["real_vs_mock"]["mock_convention"]).is_file())
+        for path in data["qa"]["tests"].values():
+            self.assertTrue(path.startswith((data["app"]["backend_dir"] + "/", data["app"]["frontend_dir"] + "/")))
+        for key in ("test_plan", "evidence", "security_review", "decisions"):
+            self.assertTrue(data["qa"][key].startswith(data["qa"]["docs_dir"] + "/"))
+            self.assertIn(data["qa"][key], qa_security.INSTRUCTIONS)
+        for path in data["qa"]["tests"].values():
+            self.assertIn(path.split("<")[0], qa_security.INSTRUCTIONS)
+
+    def test_qa_suites_live_in_the_app_repo_not_in_wallee(self):
+        self.assertFalse((Path(qa_security.ROOT) / "tests" / "qa").exists())
+        self.assertIn("nunca propongas archivos de prueba dentro de wallee", qa_security.INSTRUCTIONS)
+
+    def test_real_context_includes_map_and_real_vs_mock_definition(self):
+        context = qa_security.build_context(FEATURE)
+        self.assertIn("Fuente: agents/qa-project-map.json", context)
+        self.assertIn("va a la rama «qa-security»", context)
+        self.assertIn("challenge/docs/discovery/03-alcance-hackathon/04-real-vs-mock.md", context)
 
 
 if __name__ == "__main__":

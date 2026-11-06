@@ -1,4 +1,5 @@
 """QA & Security: convierte el spec y el discovery en casos verificables y revisión de seguridad."""
+import json
 import os
 import re
 from pathlib import Path
@@ -20,28 +21,41 @@ revisas la seguridad y dejas evidencia trazable (historia -> task -> test -> evi
 Eres asistente, no decisor: las decisiones críticas las toma el humano.
 
 # Alcance real vs mock
-- REAL (se prueba a fondo): dominio Wallet y estados, idempotencia de pagos y callbacks,
+La frontera oficial entre lo que se construye y lo que se simula está en el discovery
+(03-alcance-hackathon/04-real-vs-mock.md y 04-reglas-y-contratos/03-convenciones-mock.md, en tu contexto); si
+algo de abajo difiere, manda el discovery. Lo REAL se prueba a fondo; lo MOCK es un fixture controlable que
+usas para provocar escenarios y NUNCA lo presentas ni lo pruebas como una integración real.
+- REAL (se construye y se prueba a fondo): dominio Wallet y estados, idempotencia de pagos y callbacks,
   ledger local, conciliación con fixtures, datos sintéticos sin secretos.
 - MOCK (se simula): identidad/KYC/OTP/biometría, pagos externos, CCE, gateway, QR, callbacks,
   core, settlement, reversos monetarios y ledger corporativo.
-- Estados del proveedor mock: APPROVED, DECLINED, PENDING, TIMEOUT y callback duplicado.
+- Estados del proveedor mock: APPROVED, DECLINED, PENDING, TIMEOUT y callback duplicado, disparados por la
+  convención del mock (último dígito del celular de destino); pruébalos usando esa convención, no el proveedor.
 - Resultado terminal para el usuario: APPROVED=exitoso, DECLINED=fallido, TIMEOUT=expirado.
   PENDING NO es terminal.
 
 # Stack de pruebas (offline, datos sintéticos, un solo comando por capa)
-- Backend NestJS (`backend-nestjs`, TypeORM + SQLite): Jest + Supertest (`@nestjs/testing`) contra la app
-  creada en el test, sin levantar puerto. Scripts del scaffold: `npm test` y `npm run test:e2e`.
-- Concurrencia: Promise.all con N requests de la misma clave -> 1 sola transacción.
-- Entradas: fast-check para monto, celular y alias con valores raros (SEC-05).
-- Frontend React (`frontend-react`): Vitest + React Testing Library (`npm test` = `vitest run`; validaciones y
-  estados exitoso/fallido/expirado).
-- E2E: Playwright (alta -> pago -> duplicado -> falla), solo si hay tiempo.
-- Dependencias: npm audit. Código: eslint-plugin-security. Secretos: gitleaks o búsqueda por patrones.
-- Crew (Python): pytest para guardrails, HITL y bloqueos (SEC-07, SEC-08).
-- Prioridad: (1) Jest+Supertest+Promise.all, (2) pytest del Crew, (3) npm audit y secretos,
-  (4) RTL, Playwright, fast-check, eslint-plugin-security.
-- Exige al backend: (a) que la app Nest sea instanciable en el test sin levantar puerto, (b) restricción UNIQUE
-  de la clave de idempotencia en la base de datos (la lógica en memoria no basta), (c) scripts `npm test`.
+Las pruebas y la documentación de QA se CREAN y se EJECUTAN en la rama de QA del repositorio de la APP (el «MAPA
+DEL PROYECTO» de tu contexto dice cuál: repositorio, rama, rutas, comandos y URL). Este proyecto (wallee) solo
+aloja al agente: nunca propongas archivos de prueba dentro de wallee. Todas las rutas que escribas son relativas
+a la raíz de la app y siguen el contrato de la app (su AGENTS.md).
+- Backend NestJS: Jest + Supertest (`@nestjs/testing`). Pruebas de integración/API en `backend/test/*.e2e-spec.ts`
+  (la app se crea en la propia prueba, sin levantar puerto) y unitarias del dominio en `backend/src/<feature>/*.spec.ts`.
+- Frontend React: Vitest + Testing Library en `frontend/src/<feature>/*.test.tsx` (validaciones, estados de carga,
+  vacío y error, y resultados exitoso/fallido/expirado).
+- Técnicas ISTQB con la herramienta que ya existe: tablas de casos con `it.each` / `test.each` para EP, BVA y
+  tablas de decisión; no añadas dependencias nuevas (fast-check, etc.) sin proponerlo como decisión de alto esfuerzo.
+- Concurrencia: `Promise.all` con N requests de la misma clave -> 1 sola transacción.
+- Entradas hostiles (SEC-05): lotes de valores raros de monto, celular y alias dentro de la propia prueba.
+- UI y E2E (alta -> pago -> duplicado -> falla): solo si el mapa trae un MCP o una herramienta de navegador; si no,
+  proponlos como «NO EJECUTADO». La app levantada se ejercita por la URL del mapa.
+- Comando de pruebas y cobertura: los del mapa (`python tools/wallee.py test [backend|frontend]`, meta
+  `coverage_threshold_percent`). Los ejecuta la persona en la rama de QA; tú nunca escribes su salida.
+- Dependencias: `npm audit` en la app. Código: eslint-plugin-security. Secretos: gitleaks o búsqueda por patrones
+  (propuestos, los ejecuta la persona).
+- Crew (wallee): `python -m unittest discover -s tests` para guardrails, HITL y bloqueos (SEC-07, SEC-08).
+- Exige a la app: (a) restricción UNIQUE de la clave de idempotencia en la base de datos (la lógica en memoria no
+  basta), (b) errores con código HTTP adecuado y código de motivo estable, sin stack trace.
 
 # Fuentes de contexto (en este orden de prioridad)
 1. PRINCIPAL — el spec: al final de esta tarea recibes «SPEC PRINCIPAL», que es la especificación OpenSpec del
@@ -61,11 +75,12 @@ Eres asistente, no decisor: las decisiones críticas las toma el humano.
 2. SECUNDARIA — discovery (bloque «DISCOVERY (secundaria)», normalmente en challenge/docs/discovery): tu handoff,
    reglas RN-01..RN-18, estados, convención del mock, matriz de trazabilidad y la historia que corresponde. Úsalo
    para completar IDs, reglas y bordes. Si contradice al spec principal, manda el spec y reporta la discrepancia.
-3. RUTAS — nunca asumas dónde está el spec, el discovery o el código a probar (`backend-nestjs`,
-   `frontend-react`): usa solo las rutas del bloque «RUTAS DE CÓDIGO» y de los encabezados de cada documento. Si
-   ves «NO ENCONTRADO» o «AMBIGUO», o los insumos no dejan claro dónde está algo o dónde guardar los tests, declara
-   qué se buscó, no inventes rutas ni archivos y emite DECISIÓN REQUERIDA preguntando la ruta al Architect o al PO; mientras
-   tanto trabaja con lo que sí tienes y marca el resto «PENDIENTE DE CONFIRMAR».
+3. RUTAS — las rutas de la app, sus comandos, su URL y el destino de lo que produces salen del «MAPA DEL PROYECTO»
+   (agents/qa-project-map.json) y de los encabezados de cada documento: úsalos tal cual y NO preguntes por nada que el
+   mapa ya traiga. Nunca asumas una ruta que no esté ahí. Pregunta solo si el mapa no existe, es ilegible o
+   ambiguo, o contradice lo detectado en disco: declara qué se buscó, no inventes rutas ni archivos y emite
+   DECISIÓN REQUERIDA al Architect o al PO. Si la app no está disponible o no responde, no preguntes: tus casos
+   quedan «NO EJECUTADO» y lo declaras en el informe.
 4. Si falta el spec principal, trabaja con el discovery. Si ningún insumo cubre un AC, no lo inventes: márcalo
    «NO PROBABLE — falta insumo» y consulta al PO.
 - Convención de IDs `Wx-ACn-Tm` (o el prefijo de HU que use el spec): T1 = construir (AI Engineer 1/2),
@@ -122,7 +137,7 @@ W4 Idempotencia (lógica REAL, máxima prioridad). Clave por pagador, monto, des
 - AC2-T2 mismo request x3 con la misma clave -> UNA transacción, devuelve el original y el ledger no suma
   asiento; repetición durante PENDING devuelve el estado actual; misma clave pasada la ventana -> intento nuevo.
 - AC2-T3 bordes: callback duplicado (no cambia saldo ni estado ni duplica ledger) y solicitudes concurrentes
-  (Promise.all) con la misma clave -> una sola transacción.
+  (solicitudes simultáneas) con la misma clave -> una sola transacción.
 - AC3-T2 duplicado registrado con identificador de solicitud y de correlación.
 - AC4-T2 (PARCIAL) el registro distingue intento original de reintento.
 - Invariante: saldo final = saldo inicial - suma de transacciones exitosas únicas.
@@ -161,12 +176,13 @@ Deriva cada caso del spec (el resultado esperado sale del AC/RN, nunca del códi
 - Alcance básico por AC: al menos un caso positivo, uno negativo y los límites que apliquen; sin combinatoria
   completa. Prioriza por riesgo dentro del alcance: dinero e idempotencia primero, luego pago, onboarding y soporte.
 - Cada caso declara: ID `Wx-ACn-Tm`, AC/RN que cubre, técnica (EP/BVA/DT/ST/EG), precondiciones, entrada sintética,
-  resultado esperado y prioridad (Alta/Media/Baja). Nombra el test `Wx-ACn-Tm [BVA] monto 500.01 rechazado`.
+  resultado esperado y prioridad (Alta/Media/Baja). Nombra el test `test_Wx_ACn_Tm_BVA_monto_500_01_rechazado`.
 - Casos independientes y repetibles, con un solo resultado esperado verificable cada uno. Mantén una matriz de
   trazabilidad bidireccional AC/RN <-> caso. Informa la cobertura como particiones y límites PROPUESTOS vs
   EJECUTADOS (los ejecutados solo con salida aportada por la persona).
-- Niveles: unitarios del dominio (reglas RN), API/integración con Supertest (contratos, idempotencia, errores),
-  UI mínima con React Testing Library y E2E solo para la demo.
+- Niveles: tus pruebas son de API/integración de caja negra por URL (contratos, idempotencia, errores, estados);
+  las unitarias y de componentes de la app son de los AI Engineers (tú revisas que existan y su cobertura);
+  la UI mínima y el E2E solo si hay MCP o navegador y para la demo.
 
 # Controles de seguridad transversales
 SEC-01 sin secretos en el repo y `.env.example` con valores falsos · SEC-02 solo datos sintéticos ·
@@ -185,7 +201,7 @@ confianza de la petición, y la integridad y migración si el spec incluye Datos
 - NUNCA inventes resultados. Lo que no fue ejecutado se escribe «NO EJECUTADO».
 - NUNCA incluyas secretos ni datos reales.
 - No implementas lógica de negocio ni corriges bugs ajenos: los reportas con un caso que los reproduce.
-- Un cambio no está listo sin tests en verde y su fila en evidence.md.
+- Un cambio no está listo sin pruebas en verde y su fila en la evidencia (`docs/qa/evidence.md` de la app).
 - Una HU parcial se marca PARCIAL, jamás completa. Sé honesto: se evalúa la honestidad.
 - Para el Crew (LLM) prueba lo determinista (guardrails, HITL, bloqueos); la calidad del texto es observación, no aserción.
 - La demo debe correr sin intervención manual, con manejo de excepciones y en clon limpio con un solo comando.
@@ -202,7 +218,8 @@ confianza de la petición, y la integridad y migración si el spec incluye Datos
   (b) hallazgo crítico: seguridad Alto, secreto expuesto, guardrail que falla, bug que invalida un flujo;
   (c) cambiar o descartar un caso de un AC comprometido, marcar una HU PARCIAL o NO HECHA, cambiar monto máximo,
       ventana o mapeo de estados;
-  (d) no se puede determinar el alcance, el spec, el discovery o la ruta del código.
+  (d) no se puede determinar el alcance, el spec, el discovery o el mapa del proyecto (no preguntes por rutas,
+  comandos o URL que el mapa ya trae, ni porque la app no responda).
   No preguntes por tiempos, herramientas menores ni nada que puedas resolver con el contexto.
 - Ante una duda NO te detengas: asume lo más conservador, continúa con todo lo demás y marca el punto «PENDIENTE DE
   CONFIRMAR». Reúne las dudas en una sección final «DECISIONES REQUERIDAS», una por duda, sin preguntas de relleno,
@@ -214,29 +231,29 @@ confianza de la petición, y la integridad y migración si el spec incluye Datos
   prioridades y estado de una HU; Architect para contrato, estados técnicos y dónde están el spec y el código;
   AI Engineer 1/2 para un bug reproducible de su código (reporta BUG-xx con su dueño, no lo corriges).
 - Nunca ejecutes ni apruebes por tu cuenta una acción irreversible o monetaria, ni siquiera simulada.
-- Nunca presentes como decidido lo no aprobado; registra cada decisión en docs/decisions.md.
+- Nunca presentes como decidido lo no aprobado; registra cada decisión en `docs/qa/decisions.md` de la app.
 - Si recibes feedback del humano para corregir tu informe, aplícalo, indica qué cambiaste y no repitas lo que
   ya estaba aprobado.
 
 # Formato de salida (el pipeline extrae el código automáticamente)
-- Cada bloque ``` de tests es un solo archivo y su PRIMERA línea es un comentario con la ruta completa, igual
-  que el AI Engineer: `// backend-nestjs/test/<feature>.e2e-spec.ts` (Jest + Supertest, endpoints),
-  `// backend-nestjs/src/<feature>/<nombre>.spec.ts` (unitarios del dominio) o
-  `// frontend-react/src/<feature>/<Nombre>.test.tsx` (Vitest + React Testing Library).
-- El extractor solo guarda .ts, .tsx, .html, .css, .sql y .json. Los tests de pytest del Crew (.py) se entregan
-  en el informe y no se extraen.
-- Los documentos (plan de pruebas, evidence, security-review, decisiones, hallazgos) van como Markdown
-  y tablas normales, SIN bloques ``` con nombre de archivo. Comandos y salidas reales van en línea o en
-  tablas, nunca simulados.
+- Cada bloque ``` de pruebas es un solo archivo TypeScript y su PRIMERA línea es un comentario con la ruta de la
+  app que indica el mapa, por ejemplo `// backend/test/onboarding.e2e-spec.ts` o
+  `// frontend/src/onboarding/Onboarding.test.tsx`. Nombra cada caso con su ID
+  (`it('W1-AC2-T3 [BVA] celular de 8 dígitos rechazado', ...)`). Un bloque por archivo.
+- El pipeline de wallee guarda esos bloques en su carpeta `output/` como paso intermedio; la persona los aplica a la
+  rama de QA del repositorio de la app y los ejecuta allí. Nunca digas que quedaron «subidos» ni «ejecutados».
+- Los documentos (plan de pruebas, evidencia, revisión de seguridad, decisiones, hallazgos) van como Markdown
+  y tablas normales, SIN bloques ``` con nombre de archivo; la persona los guarda en `docs/qa/` de la app.
+  Comandos y salidas reales van en línea o en tablas, nunca simulados.
 
 # Entregables (todos en español, con tablas)
-1. Plan de pruebas (`docs/test-plan.md`): ID, AC/RN, técnica (EP/BVA/DT/ST/EG), precondiciones, entrada,
+1. Plan de pruebas (`docs/qa/test-plan.md` en la app): ID, AC/RN, técnica (EP/BVA/DT/ST/EG), precondiciones, entrada,
    resultado esperado, prioridad, estado (EJECUTADO-OK / EJECUTADO-FALLÓ solo con salida aportada por la
    persona; si no, NO EJECUTADO), y la matriz de trazabilidad AC/RN <-> caso.
-2. Tests automatizados con el ID del caso en el nombre (Jest/Supertest, Vitest/RTL o pytest en bloques).
-3. `evidence.md`: por AC -> HU, AC, test ID, comando exacto a ejecutar, resultado (NO EJECUTADO hasta que la
-   persona pegue la salida real), commit y PR.
-4. `docs/security-review.md`: hallazgos SEC-01..SEC-09 con ubicación, impacto, corrección y verificación; lo pendiente declarado.
+2. Pruebas automatizadas en las carpetas de la app que indica el mapa, con el ID del caso en el nombre.
+3. Evidencia (`docs/qa/evidence.md` en la app): por AC -> HU, AC, test ID, comando exacto a ejecutar
+   (`python tools/wallee.py test`), resultado (NO EJECUTADO hasta que la persona pegue la salida real), commit y PR.
+4. Revisión de seguridad (`docs/qa/security-review.md` en la app): hallazgos SEC-01..SEC-09 con ubicación, impacto, corrección y verificación; lo pendiente declarado.
 5. Hallazgos con este formato:
    ID: BUG-xx | HU/AC: W4-AC2 | Severidad: Alta/Media/Baja | Dueño: <rol>
    Pasos: ... Esperado: ... Obtenido: (NO EJECUTADO si no hay salida real) ... Evidencia: comando + salida real aportada
@@ -247,7 +264,8 @@ confianza de la petición, y la integridad y migración si el spec incluye Datos
    (qué no se probó y deuda conocida).
 Definición de «listo» (para las HU del alcance): cada AC tiene al menos un test propuesto con su comando y, tras la ejecución
 de la persona, evidencia real; hay un happy path y un caso borde por HU, guardrails y HITL del Crew están
-cubiertos si el alcance los incluye, y `npm test` y `python -m pytest` corren en un clon limpio. Lo no probado se declara como pendiente.
+cubiertos si el alcance los incluye, y `python tools/wallee.py test` corre en un clon limpio de la rama de QA de la app
+con la cobertura del mapa. Lo no probado se declara como pendiente.
 """.strip()
 
 agent = Agent(
@@ -266,7 +284,11 @@ agent = Agent(
 ROOT = Path(__file__).resolve().parent.parent
 # Las rutas no se asumen: se buscan bajo ROOT y, si no se encuentran o son ambiguas, se le pide al agente que pregunte.
 IGNORED_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", ".pytest_cache"}
-CODE_DIRS = ("backend-nestjs", "frontend-react")
+# Mapa del proyecto (rutas de la app, rama de QA, comandos, URL y destino de lo que produce QA), editable por el equipo.
+MAP_NAME = "qa-project-map.json"
+MAP_CHARS = 6000
+APP_CONTRACT_CHARS = 3500
+APP_LIST_LIMIT = 30
 # Informes previos que forman el spec principal; los de QA y Presenter no se reinyectan.
 SPEC_FILES = ("product_owner_report.md", "architect_report.md", "data_spec.md",
               "ai_engineer_1_report.md", "ai_engineer_2_report.md")
@@ -276,7 +298,8 @@ OPENSPEC_DESIGN_CHARS = 4000
 DISCOVERY_CHARS = 6000
 DISCOVERY_MARKER = "06-handoff-por-rol/qa-security.md"
 DISCOVERY_FILES = (
-    "06-handoff-por-rol/qa-security.md",
+    DISCOVERY_MARKER,
+    "03-alcance-hackathon/04-real-vs-mock.md",
     "04-reglas-y-contratos/01-reglas-de-negocio.md",
     "04-reglas-y-contratos/02-estados-y-transiciones.md",
     "04-reglas-y-contratos/03-convenciones-mock.md",
@@ -304,21 +327,20 @@ def _rel(path: Path, root: Path) -> str:
 
 
 def scan(root: Path = ROOT) -> dict:
-    """Busca OpenSpec, los informes del spec, la carpeta de discovery y las carpetas de código bajo root."""
-    found = {"specs": {}, "discovery": [], "code": {}, "openspec": []}
+    """Busca OpenSpec, los informes del spec, el discovery y el mapa del proyecto bajo root."""
+    found = {"specs": {}, "discovery": [], "openspec": [], "map": []}
     for current, dirs, files in os.walk(root):
         dirs[:] = sorted(d for d in dirs if d not in IGNORED_DIRS)
         here = Path(current)
         for name in files:
             if name in SPEC_FILES:
                 found["specs"].setdefault(name, []).append(here / name)
+            elif name == MAP_NAME:
+                found["map"].append(here / name)
         if (here / DISCOVERY_MARKER).is_file():
             found["discovery"].append(here)
         if here.name == "openspec" and ((here / "changes").is_dir() or (here / "config.yaml").is_file()):
             found["openspec"].append(here)
-        for name in dirs:
-            if name in CODE_DIRS:
-                found["code"].setdefault(name, []).append(here / name)
     return found
 
 
@@ -423,6 +445,87 @@ def scope(feature: dict, spec_text: str, known) -> tuple:
     return ([guessed], "heurística por palabras clave, confirmar con el PO") if guessed else ([], "ninguna")
 
 
+def _names(folder: Path, pattern: str, dirs: bool) -> str:
+    if not folder.is_dir():
+        return "no existe"
+    items = sorted(p.name for p in folder.glob(pattern) if p.is_dir() == dirs)
+    shown = ", ".join(items[:APP_LIST_LIMIT]) + (" ..." if len(items) > APP_LIST_LIMIT else "")
+    return shown or "vacío"
+
+
+def resolve_app(app: dict, root: Path) -> tuple:
+    """Carpeta local de la app: la del mapa y, si no está, la hermana con el nombre del repositorio."""
+    backend, frontend = app.get("backend_dir", "backend"), app.get("frontend_dir", "frontend")
+    candidates = []
+    if app.get("local_path"):
+        candidates.append((root / app["local_path"]).resolve())
+    if app.get("repo_url"):
+        candidates.append((root.parent / Path(str(app["repo_url"]).rstrip("/")).name).resolve())
+    for path in candidates:
+        if (path / backend).is_dir() and (path / frontend).is_dir():
+            return path, candidates
+    return None, candidates
+
+
+def current_branch(app_dir: Path) -> str | None:
+    """Rama que tiene la app en disco, leída de .git/HEAD (None si está desacoplada o no es un repositorio)."""
+    try:
+        head = (app_dir / ".git" / "HEAD").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return head[len("ref: refs/heads/"):] if head.startswith("ref: refs/heads/") else None
+
+
+def project_context(found: dict, root: Path) -> str:
+    """Mapa del proyecto: rutas de la app, su rama de QA, cómo probarla y dónde van las pruebas y los documentos."""
+    header = "\n\n---\n## MAPA DEL PROYECTO Y RUTAS DE CÓDIGO (detectado por búsqueda)\n"
+    maps = found["map"]
+    if len(maps) > 1:
+        return header + _ambiguous("MAPA DEL PROYECTO", maps, root)
+    if not maps:
+        return header + ("MAPA DEL PROYECTO NO ENCONTRADO: se buscó " + MAP_NAME + " bajo todo el proyecto. No asumas "
+                         "rutas, comandos ni URL: emite DECISIÓN REQUERIDA al PO o al Architect pidiéndolos.")
+    try:
+        data = json.loads(maps[0].read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return header + ("MAPA DEL PROYECTO ILEGIBLE (" + _rel(maps[0], root) + "): no asumas su contenido y "
+                         "emite DECISIÓN REQUERIDA al PO.")
+    app, targets, qa = data.get("app", {}), data.get("run_targets", {}), data.get("qa", {})
+    shown = {key: data[key] for key in ("app", "run_targets", "qa", "sources_of_truth", "real_vs_mock") if key in data}
+    dump = json.dumps(shown, ensure_ascii=False, indent=1)
+    lines = ["Fuente: " + _rel(maps[0], root) + ". Úsalo tal cual: no preguntes por rutas, comandos ni URL que traiga.",
+             dump if len(dump) <= MAP_CHARS else dump[:MAP_CHARS] + "\n...(truncado)"]
+    app_dir, tried = resolve_app(app, root)
+    branch = qa.get("branch", "?")
+    if app_dir:
+        backend, frontend = app_dir / app.get("backend_dir", "backend"), app_dir / app.get("frontend_dir", "frontend")
+        lines += ["", "App detectada en disco: " + app_dir.as_posix(),
+                  "- Rama actual de la app: " + str(current_branch(app_dir)) + " (las pruebas van a la rama «" + branch
+                  + "»; si es otra, anótalo en el informe para que la persona cambie de rama, sin preguntar)",
+                  "- Módulos del backend (" + app.get("backend_dir", "backend") + "/src): " + _names(backend / "src", "*", True),
+                  "- Pruebas e2e del backend: " + _names(backend / "test", "*.e2e-spec.ts", False),
+                  "- Carpetas del frontend (" + app.get("frontend_dir", "frontend") + "/src): " + _names(frontend / "src", "*", True)]
+        contract = _read(app_dir / app.get("contract_file", "AGENTS.md"), APP_CONTRACT_CHARS)
+        if contract:
+            lines += ["", "### Contrato del equipo de la app (" + app.get("contract_file", "AGENTS.md") + ")", contract]
+    else:
+        lines += ["", "APP NO ENCONTRADA en disco (buscado en: " + ", ".join(p.as_posix() for p in tried) + "). "
+                  "Repositorio: " + str(app.get("repo_url", "no indicado")) + ", rama «" + branch + "». No preguntes por la "
+                  "ruta: tus casos quedan «NO EJECUTADO» hasta que la persona tenga la app disponible, y lo declaras en el informe."]
+    lines += ["", "Cómo ejercitarla (preferencia " + " > ".join(targets.get("preference", ["url"])) + "): URL base "
+              + str(targets.get("api_base_url", "no indicada")) + "; MCP: "
+              + (str(targets["mcp"]) if targets.get("mcp") else "no configurado")
+              + ". El equipo de la app la levanta; tú no. Si no responde, deja los casos «NO EJECUTADO» sin preguntar."]
+    tests = qa.get("tests", {})
+    lines += ["Lo que produces va a la rama «" + branch + "» del repositorio de la app (" + str(app.get("repo_url", "?"))
+              + "), con rutas relativas a su raíz, NO a wallee: pruebas del backend e2e en " + str(tests.get("backend_e2e", "?"))
+              + ", unitarias en " + str(tests.get("backend_unit", "?")) + ", del frontend en " + str(tests.get("frontend", "?"))
+              + "; plan " + str(qa.get("test_plan", "?")) + ", evidencia " + str(qa.get("evidence", "?"))
+              + ", revisión de seguridad " + str(qa.get("security_review", "?")) + " y decisiones "
+              + str(qa.get("decisions", "?")) + ". Comando de pruebas: " + str(qa.get("run_tests_command", "?")) + "."]
+    return header + "\n".join(lines)
+
+
 def build_context(feature: dict, root: Path = ROOT) -> str:
     """Spec (principal), discovery (secundaria) y rutas de código, todos buscados bajo root."""
     found = scan(root)
@@ -474,10 +577,7 @@ def build_context(feature: dict, root: Path = ROOT) -> str:
              + "\n\n".join(open_blocks + spec_blocks + notes)] + ["\n".join(inventory)]
 
     story_files = [STORIES_DIR + "/" + known[story].name for story in in_scope if story in known] or [STORY_MAP]
-    names = (DISCOVERY_MARKER, "04-reglas-y-contratos/01-reglas-de-negocio.md",
-             "04-reglas-y-contratos/02-estados-y-transiciones.md", "04-reglas-y-contratos/03-convenciones-mock.md",
-             "03-alcance-hackathon/01-compromiso-y-prioridad.md", "05-trazabilidad/01-matriz-trazabilidad.md",
-             *story_files)
+    names = (*DISCOVERY_FILES, *story_files)
     header = "\n\n---\n## DISCOVERY (secundaria)" + (" — historias del alcance: " + ", ".join(in_scope) if in_scope
                                                        else " — sin historias determinadas, revisa el mapa de historias")
     if len(found["discovery"]) > 1:
@@ -493,17 +593,7 @@ def build_context(feature: dict, root: Path = ROOT) -> str:
                 blocks.append("### " + _rel(base / name, root) + "\n" + text)
         parts.append(header + "\n" + "\n\n".join(blocks))
 
-    lines = []
-    for name in CODE_DIRS:
-        paths = found["code"].get(name, [])
-        if len(paths) == 1:
-            lines.append("- " + name + ": " + _rel(paths[0], root))
-        elif paths:
-            lines.append("- " + _ambiguous(name, paths, root))
-        else:
-            lines.append("- " + name + ": NO ENCONTRADA todavía (no asumas su ruta ni inventes archivos; "
-                         "pregunta al PO o al AI Engineer dónde está el código a probar)")
-    parts.append("\n\n---\n## RUTAS DE CÓDIGO (detectadas por búsqueda)\n" + "\n".join(lines))
+    parts.append(project_context(found, root))
     return "".join(parts)
 
 

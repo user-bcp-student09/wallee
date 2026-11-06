@@ -1,0 +1,61 @@
+{
+  "_comentario": "Mapa del proyecto que lee el agente QA & Security. Las rutas de la app son relativas a la raíz del repositorio de la app; las del agente, a la raíz de wallee. Si algo cambia, se edita aquí y el agente lo toma sin preguntar.",
+  "app": {
+    "repo_url": "https://github.com/user-bcp-student09/wallee-app",
+    "upstream_url": "https://github.com/user-bcp-student17/wallee-app",
+    "local_path": "../wallee-app",
+    "backend_dir": "backend",
+    "frontend_dir": "frontend",
+    "contract_file": "AGENTS.md",
+    "stack": "Backend NestJS 10 + TypeScript (Jest + Supertest) y frontend React 18 + Vite + TypeScript (Vitest + Testing Library)",
+    "coverage_threshold_percent": 85,
+    "commands": {
+      "setup": "python tools/wallee.py setup",
+      "start_backend": "python tools/wallee.py start backend",
+      "start_frontend": "python tools/wallee.py start frontend",
+      "test_all": "python tools/wallee.py test",
+      "test_backend": "python tools/wallee.py test backend",
+      "test_frontend": "python tools/wallee.py test frontend",
+      "podman_test": "python tools/wallee.py podman-test",
+      "up": "python tools/wallee.py up",
+      "down": "python tools/wallee.py down"
+    }
+  },
+  "run_targets": {
+    "_comentario": "El equipo de la app la levanta; QA solo la prueba. Orden de preferencia para ejercitarla.",
+    "preference": ["url", "mcp", "local"],
+    "api_base_url": "http://localhost:3000",
+    "health_path": "/health",
+    "frontend_dev_url": "http://localhost:5173",
+    "frontend_container_url": "http://localhost:8090",
+    "mcp": null
+  },
+  "qa": {
+    "_comentario": "Las pruebas y la documentación de QA se crean y se ejecutan en la rama indicada del repositorio de la app (fork), no en wallee. Las rutas son relativas a la raíz de la app.",
+    "branch": "qa-security",
+    "tests": {
+      "backend_e2e": "backend/test/<feature>.e2e-spec.ts",
+      "backend_unit": "backend/src/<feature>/<nombre>.spec.ts",
+      "frontend": "frontend/src/<feature>/<Nombre>.test.tsx"
+    },
+    "run_tests_command": "python tools/wallee.py test",
+    "docs_dir": "docs/qa",
+    "test_plan": "docs/qa/test-plan.md",
+    "evidence": "docs/qa/evidence.md",
+    "security_review": "docs/qa/security-review.md",
+    "decisions": "docs/qa/decisions.md"
+  },
+  "sources_of_truth": [
+    "Decisiones del Product Owner humano",
+    "openspec/changes/* (cambios activos del sprint)",
+    "challenge/epic y challenge/user-stories (documentos originales del reto)",
+    "challenge/docs/discovery (derivado del reto, estado propuesto hasta que el PO lo confirme)",
+    "El código de la app es lo que se prueba, no la verdad: si difiere del spec se reporta un BUG-xx"
+  ],
+  "real_vs_mock": {
+    "definition": "challenge/docs/discovery/03-alcance-hackathon/04-real-vs-mock.md",
+    "mock_convention": "challenge/docs/discovery/04-reglas-y-contratos/03-convenciones-mock.md",
+    "real": ["dominio de wallet y estados", "idempotencia de pagos y callbacks", "ledger local", "datos sintéticos", "conciliación con fixtures (stretch)"],
+    "mock": ["identidad, KYC, OTP y biometría", "pagos externos, CCE, gateway, QR y callbacks", "core, settlement, reversos monetarios y ledger corporativo", "estados APPROVED, DECLINED, PENDING, TIMEOUT y callback duplicado"]
+  }
+}
