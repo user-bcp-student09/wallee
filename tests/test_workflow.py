@@ -76,6 +76,8 @@ class WorkflowTests(unittest.TestCase):
             stack.enter_context(
                 patch.object(app, "CHECKPOINT_FILE", output / ".checkpoint.json")
             )
+            target = Path(stack.enter_context(tempfile.TemporaryDirectory()))
+            stack.enter_context(patch.object(app, "select_target_repo", return_value=target))
             stack.enter_context(patch.object(app, "proj_tools", return_value=[]))
             stack.enter_context(
                 patch.object(
@@ -132,6 +134,8 @@ class WorkflowTests(unittest.TestCase):
                 "frontend-react/src/main.tsx",
             ):
                 self.assertTrue((output / relative).is_file(), relative)
+                self.assertTrue((target / relative).is_file(), relative)
+            self.assertFalse((target / ".checkpoint.json").exists())
             presenter_prompt = calls[-1][1]
             self.assertIn("Coverage report", presenter_prompt)
             self.assertIn("Approved output from architect", presenter_prompt)
