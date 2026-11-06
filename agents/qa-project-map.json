@@ -31,19 +31,19 @@
     "mcp": null
   },
   "qa": {
-    "_comentario": "Las pruebas y la documentación de QA se crean y se ejecutan en la rama indicada del repositorio de la app (fork), no en wallee. Las rutas son relativas a la raíz de la app.",
+    "_comentario": "Las pruebas y la documentación de QA se crean y se ejecutan en la rama indicada del repositorio de la app (fork), no en wallee. main.py copia output/ a output_target_dir (WALLEE_TARGET_REPO), por eso las rutas que emite el agente son relativas a esa carpeta; las de este bloque son relativas a la raíz de la app.",
     "branch": "qa-security",
+    "output_target_dir": "backend",
     "tests": {
       "backend_e2e": "backend/test/<feature>.e2e-spec.ts",
       "backend_unit": "backend/src/<feature>/<nombre>.spec.ts",
       "frontend": "frontend/src/<feature>/<Nombre>.test.tsx"
     },
     "run_tests_command": "python tools/wallee.py test",
-    "docs_dir": "docs/qa",
-    "test_plan": "docs/qa/test-plan.md",
-    "evidence": "docs/qa/evidence.md",
-    "security_review": "docs/qa/security-review.md",
-    "decisions": "docs/qa/decisions.md"
+    "test_plan": "backend/test/test-plan.md",
+    "evidence": "backend/test/evidence.md",
+    "security_review": "backend/security/security-review.md",
+    "decisions": "backend/test/decisions.md"
   },
   "sources_of_truth": [
     "Decisiones del Product Owner humano",
