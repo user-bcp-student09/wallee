@@ -66,6 +66,31 @@ class TargetRepoTests(unittest.TestCase):
         self.assertEqual((target / "specs" / "a.md").read_text(), "new")
         self.assertFalse((target / ".checkpoint.json").exists())
         self.assertFalse((target / "frontend-react").exists())
+    def test_scaffold_is_not_copied_when_the_target_has_its_own_layout(self):
+        out = self.docs / "out2"
+        for rel in ("backend-nestjs/package.json", "frontend-react/package.json", "backend/test/a.e2e-spec.ts",
+                    "specs/qa.md"):
+            (out / rel).parent.mkdir(parents=True, exist_ok=True)
+            (out / rel).write_text("x")
+        app = self.mine / "ai-labs"
+        (app / "backend").mkdir()
+        (app / "frontend").mkdir()
+
+        copied = copy_output(out, app)
+
+        self.assertEqual(sorted(p.as_posix() for p in copied), ["backend/test/a.e2e-spec.ts", "specs/qa.md"])
+        self.assertFalse((app / "backend-nestjs").exists())
+        self.assertFalse((app / "frontend-react").exists())
+
+    def test_scaffold_is_still_copied_to_a_repo_without_its_own_layout(self):
+        out = self.docs / "out3"
+        (out / "backend-nestjs").mkdir(parents=True)
+        (out / "backend-nestjs" / "package.json").write_text("x")
+        empty = self.mine / "crewai"
+
+        copied = copy_output(out, empty)
+
+        self.assertEqual(copied, [Path("backend-nestjs/package.json")])
 
 
 if __name__ == "__main__":
