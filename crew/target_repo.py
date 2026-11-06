@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 from crew import ui
+from crew.qa_sections import has_section, is_accumulating, merge_section
 from crew.scaffold import BACKEND_DIR, FRONTEND_DIR
 
 # Carpetas de participante: T52415-Samuel-Luis-Mendoza, u17721-gladys-patino-abanto, ...
@@ -95,11 +96,15 @@ def has_own_layout(target_repo: Path) -> bool:
     return any((target_repo / name).is_dir() for name in OWN_LAYOUT_DIRS)
 
 
-def copy_output(output_dir: Path, target_repo: Path) -> list[Path]:
+def copy_output(output_dir: Path, target_repo: Path, qa_section: tuple[str, str] | None = None,
+                replace_qa_section: bool = True) -> list[Path]:
     """Copia output/ en la raíz del repositorio destino (fusiona, sobrescribe, omite el checkpoint).
 
     Si el destino ya tiene backend/ o frontend/, no copia el andamiaje backend-nestjs/ y frontend-react/
     para no crear carpetas duplicadas junto a las suyas.
+
+    Con `qa_section=(clave, título)`, los informes de QA no se sobrescriben: se agrega o actualiza solo la sección
+    de ese feature. Con `replace_qa_section=False` una sección ya existente se conserva tal cual.
     """
     skipped_dirs = SCAFFOLD_DIRS if has_own_layout(target_repo) else set()
     copied: list[Path] = []
@@ -113,6 +118,14 @@ def copy_output(output_dir: Path, target_repo: Path) -> list[Path]:
             continue
         dest = target_repo / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
+        if qa_section and is_accumulating(rel):
+            key, title = qa_section
+            existing = dest.read_text(encoding="utf-8") if dest.is_file() else ""
+            if replace_qa_section or not has_section(existing, key):
+                dest.write_text(merge_section(existing, key, title, src.read_text(encoding="utf-8")),
+                                encoding="utf-8")
+                copied.append(rel)
+            continue
         shutil.copy2(src, dest)
         copied.append(rel)
     if omitted:

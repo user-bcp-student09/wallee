@@ -256,7 +256,10 @@ confianza de la petición, y la integridad y migración si el spec incluye Datos
 - Cada documento de QA va en su propio bloque ```markdown cuya PRIMERA línea es `<!-- test/<archivo>.md -->`
   (plan de pruebas, evidencia y decisiones) o `<!-- security/security-review.md -->` (revisión de seguridad).
   Los hallazgos y el resto del informe van como Markdown normal, sin bloque.
-- El pipeline guarda esos bloques en `output/` y los copia al repositorio de QA de la app. Tras copiar los tests,
+- El pipeline guarda esos bloques en `output/` y los copia al repositorio de QA de la app. Los documentos
+  compartidos (`test/*.md`, `security/*.md` y el informe) se ACUMULAN por feature: `main.py` agrega o actualiza solo
+  la sección de este feature y conserva las de los demás, así que emite únicamente el contenido de TU feature, sin
+  repetir ni resumir los anteriores. Tras copiar los tests,
   `main.py` pide confirmación; solo si la persona acepta ejecuta el comando permitido y genera el informe final
   con esa salida. Si rechaza, conserva «NO EJECUTADO». Nunca inventes resultados ni afirmes que se subieron si
   la publicación no lo confirma.

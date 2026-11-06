@@ -257,9 +257,9 @@ class SingleRoleRunTests(unittest.TestCase):
             self.assertEqual((output / "specs" / "qa_security_report.md").read_text(encoding="utf-8"),
                              final_report)
             self.assertIn("**FALLÓ**", (target / "test" / "evidence.md").read_text(encoding="utf-8"))
-            self.assertEqual((target / "specs" / "qa_security_report.md").read_text(encoding="utf-8"),
-                             final_report)
-            self.assertTrue(publish_mock.call_args.args[1])
+            target_report = (target / "specs" / "qa_security_report.md").read_text(encoding="utf-8")
+            self.assertIn(final_report, target_report)
+            self.assertIn("wallee-qa:begin transfer-funds", target_report)
             finish_mock.assert_not_called()
 
 

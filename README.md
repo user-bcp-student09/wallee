@@ -161,7 +161,7 @@ Los artefactos se guardan en `output/`:
 - `specs/product_owner_report.md`: alcance y criterios de aceptación.
 - `specs/architect_report.md`: solución, módulos y contrato de API.
 - `specs/ai_engineer_1_report.md` y `specs/ai_engineer_2_report.md`: implementaciones de backend y de frontend/agente.
-- `specs/qa_security_report.md`: casos, tests, comandos y hallazgos de seguridad. Al seleccionar QA, los tests se generan automáticamente; después `main.py` pide confirmación antes de ejecutarlos y producir el informe final con resultados reales. Si se rechaza, permanecen como `NO EJECUTADO`.
+- `specs/qa_security_report.md`: casos, tests, comandos y hallazgos de seguridad. Al seleccionar QA, los tests se generan automáticamente; después `main.py` pide confirmación antes de ejecutarlos y producir el informe final con resultados reales. Si se rechaza, permanecen como `NO EJECUTADO`. Los informes compartidos (`specs/qa_security_report.md`, `test/*.md`, `security/*.md`) no se sobrescriben en el repo destino: cada feature tiene su sección delimitada por `<!-- wallee-qa:begin <feature> -->`. Un feature nuevo agrega su sección; volver a ejecutar uno existente actualiza solo la suya, y si se rechaza la ejecución se conservan sus resultados previos.
 - `specs/presenter_report.md`: evidencia y guion del pitch.
 - `backend-nestjs/` y `frontend-react/`: código extraído y configuración de arranque.
 - `.checkpoint.json`: estado local de la ejecución.

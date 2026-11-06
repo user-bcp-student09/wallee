@@ -77,6 +77,7 @@ from crew.prefetch import Prefetch
 from crew import ui
 from crew.code_paths import FILENAME_PATTERN, feature_slug, guess_filename, resolve_destination
 from crew.qa_execution import append_execution_evidence, run_qa_tests
+from crew.qa_sections import reset_qa_documents
 
 # ── MCP clients ────────────────────────────────────────────────────
 from mcp_projects import (
@@ -679,6 +680,12 @@ def main():
     # Ciclo de vida: el item pasa de Todo a In Progress al empezar a trabajarlo
     start_item(selected_project, selected_item)
 
+    # QA acumula una sección por feature en los informes compartidos del repo destino (no los sobrescribe)
+    qa_section = None
+    if any(role.KEY == "qa_security" for role in selected_roles):
+        reset_qa_documents(OUTPUT_DIR)
+        qa_section = (FEATURE_SLUG, feature["title"])
+
     # ── Loop HITL ─────────────────────────────────────────────────────
     for step_key, step_label, agent, spec_file, do_code in steps:
         role = role_by_key[step_key]
@@ -699,6 +706,8 @@ def main():
                 saved_out = steps_state[step_key].get("output", "")
                 if saved_out:
                     extract_and_save_code(saved_out, folders)
+            if step_key == "qa_security" and steps_state[step_key].get("output"):
+                save_spec(spec_file, steps_state[step_key]["output"], report_folder(role))
             continue
 
         print(f"\n{'─'*60}")
@@ -789,7 +798,7 @@ def main():
     if selected_change:
         print(f"  OpenSpec: revisa y marca las tareas en openspec/changes/{selected_change.name}/tasks.md")
     print("=" * 60)
-    copied = copy_output(OUTPUT_DIR, target_repo)
+    copied = copy_output(OUTPUT_DIR, target_repo, qa_section, replace_qa_section=False)
     ui.success(f"{len(copied)} archivos copiados de output/ a {target_repo}")
     qa_role = next((role for role in selected_roles if role.KEY == "qa_security"), None)
     qa_test_result = None
@@ -804,7 +813,7 @@ def main():
             qa_test_result = run_qa_tests(target_repo, test_command)
             append_execution_evidence(OUTPUT_DIR / "test" / "evidence.md", qa_test_result)
             ui.success(f"Pruebas QA: {qa_test_result.status}")
-            copied = copy_output(OUTPUT_DIR, target_repo)
+            copied = copy_output(OUTPUT_DIR, target_repo, qa_section)
             ui.success(f"Evidencia real copiada a {target_repo}")
 
             previous_qa_report = str(approved_outputs.get(qa_role.KEY, ""))
@@ -814,10 +823,11 @@ def main():
             final_qa_report = run_step(qa_role.agent, report_task)
             save_spec(qa_role.SPEC_FILE, final_qa_report, report_folder(qa_role))
 
-            copied = copy_output(OUTPUT_DIR, target_repo)
+            copied = copy_output(OUTPUT_DIR, target_repo, qa_section)
             ui.success(f"{len(copied)} archivos QA finales copiados a {target_repo}")
         else:
-            print("Ejecución omitida. Los casos permanecen NO EJECUTADO y no se genera informe final.")
+            print("Ejecución omitida. Los casos permanecen NO EJECUTADO y no se genera informe final; "
+                  "si el feature ya tenía resultados en el repo destino, se conservan.")
 
     approved_labels = [step[1] for step in steps if steps_state.get(step[0], {}).get("status") == "approved"]
     def remember_pr_repo(repo):
