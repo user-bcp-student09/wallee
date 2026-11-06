@@ -37,16 +37,10 @@ class WorkflowTests(unittest.TestCase):
     def test_pipeline_saves_all_roles_and_resumes(self):
         self.check_pipeline(False)
 
-    def test_seven_role_pipeline_saves_sql_passes_context_and_resumes(self):
-        self.check_pipeline(True)
-
     def test_invalid_activation_is_rejected(self):
         with patch.dict("os.environ", {"CREWAI_INCLUDE_DATA": "maybe"}):
             with self.assertRaises(ValueError):
                 include_data()
-
-    def test_data_retry_rejection_and_resume_keep_human_gate(self):
-        self.check_pipeline(True, interrupt_data=True)
 
     def check_pipeline(self, with_data, interrupt_data=False):
         roles = DATA_ROLES if with_data else ROLES

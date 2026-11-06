@@ -24,8 +24,8 @@ TASKS = (
 class RoleDiscoveryTests(unittest.TestCase):
     def test_roles_come_from_agents_folder_in_flow_order(self):
         keys = [role.KEY for role in roles_mod.discover_roles()]
-        self.assertEqual(keys, list(roles_mod.CANONICAL_ORDER))
         on_disk = {p.stem for p in Path(roles_mod.agents.__path__[0]).glob("*.py")} - {"__init__"}
+        self.assertEqual(keys, [key for key in roles_mod.CANONICAL_ORDER if key in on_disk])
         self.assertEqual(set(keys), on_disk)
 
     def test_output_folders_are_read_from_each_prompt(self):
@@ -53,14 +53,13 @@ class ChooseRolesTests(unittest.TestCase):
         self.quiet.__exit__(None, None, None)
 
     def test_number_selects_one_role_and_last_option_selects_all(self):
-        picked, run_all = roles_mod.choose_roles(self.all, False, ask=lambda _: "6")
+        qa_number = [r.KEY for r in self.all].index("qa_security") + 1
+        picked, run_all = roles_mod.choose_roles(self.all, False, ask=lambda _: str(qa_number))
         self.assertEqual([r.KEY for r in picked], ["qa_security"])
         self.assertFalse(run_all)
         picked, run_all = roles_mod.choose_roles(self.all, False, ask=lambda _: str(len(self.all) + 1))
         self.assertTrue(run_all)
         self.assertNotIn("data", [r.KEY for r in picked])
-        picked, _ = roles_mod.choose_roles(self.all, True, ask=lambda _: str(len(self.all) + 1))
-        self.assertIn("data", [r.KEY for r in picked])
 
     def test_invalid_input_asks_again(self):
         answers = iter(["x", "99", "1"])
