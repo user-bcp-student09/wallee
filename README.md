@@ -79,6 +79,12 @@ Desde la raíz de este repo, con el entorno virtual activado:
 python main.py
 ```
 
+Al iniciar, `main.py` pide el repositorio de destino: primero lista las carpetas de participante
+dentro de `Documents` (por ejemplo `T52415-Samuel-Luis-Mendoza`) y después los repositorios de la
+carpeta elegida. Cuando todos los pasos quedan aprobados, copia el contenido de `output/` en la raíz
+de ese repositorio (sin `.checkpoint.json` ni `node_modules`). Para saltar la selección, define
+`WALLEE_TARGET_REPO` con la ruta del repositorio; `WALLEE_DOCUMENTS_DIR` cambia la carpeta raíz.
+
 Selecciona el proyecto y la funcionalidad. Cada paso ejecuta un mini-Crew de un agente.
 En la aprobación humana puedes usar `s` para aprobar, `r` para reintentar con feedback,
 o `n` para rechazar y detener el flujo. El checkpoint permite retomar los pasos aprobados.
