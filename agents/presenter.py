@@ -7,7 +7,9 @@ LABEL = 'Presenter'
 SPEC_FILE = 'presenter_report.md'
 EXTRACT_CODE = False
 
-INSTRUCTIONS = "Realiza la tarea de tu rol."
+INSTRUCTIONS = ("Realiza la tarea de tu rol.\n"
+                "Carpetas de salida en /output: specs\n"
+                "Carpeta del informe en /output: specs")
 agent = Agent(role='Presenter', goal="Completar la tarea asignada.",
               backstory="Eres un integrante del equipo.", llm=llm,
               verbose=True, allow_delegation=False)

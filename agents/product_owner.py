@@ -9,7 +9,9 @@ EXTRACT_CODE = False
 
 INSTRUCTIONS = ("Prioriza la historia, define el alcance (incluye y excluye) y reescribe cada "
                 "criterio de aceptación como verificable y numerado (CA-1, CA-2...). "
-                "Marca como PENDIENTE lo ambiguo; no inventes requisitos.")
+                "Marca como PENDIENTE lo ambiguo; no inventes requisitos.\n"
+                "Carpetas de salida en /output: specs\n"
+                "Carpeta del informe en /output: specs")
 agent = Agent(role='Product Owner',
               goal="Priorizar historias, definir el alcance y mantener criterios claros.",
               backstory="Eres el Product Owner del equipo: decides qué entra y qué no, "

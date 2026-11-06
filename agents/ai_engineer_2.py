@@ -14,7 +14,9 @@ INSTRUCTIONS = (
     "Parte del backend aprobado de AI Engineer 1 y no cambies sus reglas de idempotencia. "
     "El agente nunca ejecuta acciones críticas sin un humano, no ejecuta reversos monetarios reales y solo clasifica y registra disputas. "
     "El cliente no reemplaza la validación ni la autorización del servidor. "
-    "No uses datos reales ni secretos, y no inventes resultados de ejecución."
+    "No uses datos reales ni secretos, y no inventes resultados de ejecución.\n"
+    "Carpetas de salida en /output: frontend-react, backend-nestjs\n"
+    "Carpeta del informe en /output: specs"
 )
 agent = Agent(role='AI Engineer 2', goal="Implementar el frontend React y el agente de excepciones de Wallee con humano en el circuito.",
               backstory="Eres el ingeniero de Crew y frontend del equipo de Wallee: dominas React y NestJS con TypeScript.", llm=llm,

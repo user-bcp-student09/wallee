@@ -11,7 +11,9 @@ INSTRUCTIONS = ("Analiza el Issue, sus criterios de aceptación y las interfaces
                 "Define componentes, responsabilidades y límites del cambio. "
                 "Especifica entradas, respuestas y errores de la API, con ejemplos. "
                 "Relaciona cada criterio con el componente que lo resuelve. Declara supuestos y preguntas pendientes. "
-                "Entrega user_story.md con componentes, contrato de API y criterios verificables.")
+                "Entrega user_story.md con componentes, contrato de API y criterios verificables.\n"
+                "Carpetas de salida en /output: specs\n"
+                "Carpeta del informe en /output: specs")
 EPIC_CONTEXT = (
     "Contexto de la épica 'MVP de wallet en Perú para pagos cotidianos': lanzar en un trimestre una wallet "
     "para transferencias diarias de bajo monto y cobros a comercios con QR. Metas: caída en checkout de 30% a 8%, "

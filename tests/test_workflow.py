@@ -107,6 +107,9 @@ class WorkflowTests(unittest.TestCase):
                     return decision
                 return "s", ""
             stack.enter_context(patch.object(app, "hitl_approve", side_effect=approve))
+            stack.enter_context(patch.object(app, "choose_roles", return_value=(roles if with_data else ROLES, True)))
+            stack.enter_context(patch.object(app, "select_change", return_value=None))
+            stack.enter_context(patch.object(app, "publish_output"))
             stack.enter_context(patch("builtins.input", return_value="1"))
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             if interrupt_data:
@@ -126,7 +129,7 @@ class WorkflowTests(unittest.TestCase):
                 self.assertTrue((output / "specs" / spec).is_file(), key)
             for relative in (
                 "backend-nestjs/src/balance/balance.service.ts",
-                "backend-nestjs/src/transfer-funds/balance.service.spec.ts",
+                "test/backend-nestjs/src/transfer-funds/balance.service.spec.ts",
                 "backend-nestjs/src/transfer-funds/transfer.module.ts",
                 "frontend-react/src/balance/BalanceView.tsx",
                 "backend-nestjs/package.json",
