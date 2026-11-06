@@ -5,7 +5,7 @@ from pathlib import PurePosixPath
 
 from crew.scaffold import BACKEND_DIR, FRONTEND_DIR
 
-FILENAME_PATTERN = r"[a-zA-Z0-9_.\-/]+\.(?:tsx|ts|html|css|sql|json)(?![a-zA-Z0-9_])"
+FILENAME_PATTERN = r"[a-zA-Z0-9_.\-/]+\.(?:tsx|ts|html|css|sql|json|md)(?![a-zA-Z0-9_])"
 
 # Raíces de proyecto que se respetan tal cual: las del andamiaje de wallee y las del repositorio de la app
 # (backend/ y frontend/), para que la copia de output/ no las mueva a carpetas equivocadas.
@@ -64,8 +64,25 @@ def guess_filename(code: str) -> str | None:
     return f"{name}.tsx" if _JSX.search(code) else f"{name}.ts"
 
 
-def resolve_destination(target: str, code: str, slug: str) -> str | None:
-    """Ruta relativa a output/ para el archivo, o None si no es segura o no se reconoce."""
+def _pick_folder(folders: tuple, raw: str) -> str:
+    """Carpeta declarada que mejor describe el archivo: por nombre, por tipo de prueba o la primera."""
+    low = raw.lower()
+    for folder in folders:
+        if folder.lower() in low:
+            return folder
+    if re.search(r"test|spec", low):
+        for folder in folders:
+            if "test" in folder.lower():
+                return folder
+    return folders[0]
+
+
+def resolve_destination(target: str, code: str, slug: str, folders: tuple | None = None) -> str | None:
+    """Ruta relativa a output/ para el archivo, o None si no es segura o no se reconoce.
+
+    Con `folders` (las carpetas de salida que declara el prompt del rol), el resultado siempre cae
+    dentro de ellas: lo que ya apunta a una carpeta declarada se conserva y el resto se reubica.
+    """
     raw = str(target or "").strip().replace("\\", "/")
     while raw.startswith("./"):
         raw = raw[2:]
@@ -74,9 +91,21 @@ def resolve_destination(target: str, code: str, slug: str) -> str | None:
     parts = PurePosixPath(raw).parts
     if not parts or raw.startswith("/") or ".." in parts or any(":" in part for part in parts):
         return None
+    if not folders:
+        return _legacy_destination(raw, parts, code, slug)
+    if parts[0] in folders:
+        return raw if len(parts) > 1 else None
+    dest = _legacy_destination(raw, parts, code, slug)
+    if dest is None or PurePosixPath(dest).parts[0] in folders:
+        return dest
+    return f"{_pick_folder(folders, raw)}/{dest}"
 
+
+def _legacy_destination(raw: str, parts: tuple, code: str, slug: str) -> str | None:
     name = parts[-1]
     ext = name.rsplit(".", 1)[-1].lower()
+    if ext == "md":
+        return None  # los .md solo se guardan dentro de una carpeta declarada por el rol
     if ext == "sql":
         return f"db/{name}"
     if parts[0] in PROJECT_DIRS:

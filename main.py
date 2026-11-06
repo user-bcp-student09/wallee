@@ -1,8 +1,10 @@
 """S1 CrewAI — Generador BCP con HITL y checkpoint por paso.
 
 Flujo:
+  0. Pregunta qué rol ejecutar (los de agents/ o «Todos») y qué cambio OpenSpec de openspec/changes/ usar.
+     Las carpetas de /output de cada rol salen de las líneas «Carpetas de salida en /output:» de su prompt.
   1. Conecta al MCP Projects → lista proyectos → elige proyecto → lista backlog → elige feature
-  2. Por cada agente (Product Owner, Architect, AI Engineer 1, AI Engineer 2, QA & Security, Presenter), corre un mini-Crew de un solo paso.
+  2. Por cada agente elegido (Product Owner, Architect, AI Engineer 1, AI Engineer 2, QA & Security, Presenter), corre un mini-Crew de un solo paso.
   3. Tras cada paso muestra un preview y pide aprobación humana [s / n / r]:
        s = aprobar y continuar
        n = rechazar y abortar
@@ -11,8 +13,11 @@ Flujo:
      y registra el checkpoint en output/.checkpoint.json.
   5. Al volver a ejecutar: carga el checkpoint y omite los pasos ya aprobados,
      inyectando sus outputs como contexto para los pasos restantes.
+  6. Al terminar, copia output/ al repo destino, hace commit y push en una rama y, tras una
+     preaprobación humana (vista previa del PR: [s] crear · [d] borrador · [e] editar título · [n] no crear),
+     abre el Pull Request con `gh`. WALLEE_PUBLISH=false omite este paso.
 
-Estructura generada en output/:
+Estructura generada en output/ (según el rol; cada prompt declara sus carpetas):
   .checkpoint.json        ← estado de cada paso
   specs/
     product_owner_report.md
@@ -23,6 +28,7 @@ Estructura generada en output/:
     presenter_report.md
   backend-nestjs/src/<feature>/...
   frontend-react/src/<feature>/...
+  test/  security/        ← QA & Security
   db/schema.sql  seed.sql
 """
 import sys
@@ -63,8 +69,11 @@ from pathlib import Path
 from crewai import Crew, Process
 
 from crew.workflow import build_tasks, include_data, workflow_steps
-from crew.scaffold import ensure_scaffolding
+from crew.roles import choose_roles, discover_roles, output_folders, report_folder, union_folders
+from crew.openspec_changes import change_context, select_change
+from crew.scaffold import BACKEND_DIR, FRONTEND_DIR, ensure_scaffolding
 from crew.target_repo import copy_output, select_target_repo
+from crew.publish import publish_output
 from crew import ui
 from crew.code_paths import FILENAME_PATTERN, feature_slug, guess_filename, resolve_destination
 from agents.architect import agent as architect_agent
@@ -130,8 +139,8 @@ def save_checkpoint(data: dict) -> None:
 
 # ── Output helpers ─────────────────────────────────────────────────
 
-def extract_and_save_code(text) -> list[str]:
-    """Extrae bloques de código del output del LLM y los guarda en sus carpetas correspondientes."""
+def extract_and_save_code(text, folders=None) -> list[str]:
+    """Extrae bloques de código del output del LLM y los guarda en las carpetas de salida del rol."""
     text_str = str(getattr(text, "raw", text) or "")
     saved = []
     seen_paths = set()
@@ -170,7 +179,7 @@ def extract_and_save_code(text) -> list[str]:
         if not target_name:
             continue
 
-        dest_rel = resolve_destination(target_name, code, FEATURE_SLUG)
+        dest_rel = resolve_destination(target_name, code, FEATURE_SLUG, folders)
 
         if dest_rel and dest_rel not in seen_paths:
             seen_paths.add(dest_rel)
@@ -186,14 +195,19 @@ def extract_and_save_code(text) -> list[str]:
     else:
         print(f"  📦 Total archivos de código generados en este paso: {len(saved)}")
 
-    # Asegurar que el andamiaje base exista siempre
-    ensure_scaffolding(OUTPUT_DIR)
+    # Asegurar el andamiaje base solo si el rol escribe en los proyectos NestJS/React
+    if needs_scaffolding(folders):
+        ensure_scaffolding(OUTPUT_DIR)
 
     return saved
 
 
-def save_spec(filename: str, content) -> None:
-    specs_dir = OUTPUT_DIR / "specs"
+def needs_scaffolding(folders) -> bool:
+    return folders is None or bool({BACKEND_DIR, FRONTEND_DIR} & set(folders))
+
+
+def save_spec(filename: str, content, folder: str = "specs") -> None:
+    specs_dir = OUTPUT_DIR / folder
     specs_dir.mkdir(parents=True, exist_ok=True)
     text = str(getattr(content, "raw", content) or "")
     (specs_dir / filename).write_text(text, encoding="utf-8")
@@ -455,9 +469,16 @@ def build_context_note(approved_outputs: dict) -> str:
 
 def main():
     with_data = include_data()
-    steps = workflow_steps(with_data)
-    # ── Repositorio de destino donde se copiará output/ al terminar ──
     ui.banner()
+    # ── Rol a ejecutar (carpeta agents/ o «Todos») y cambio OpenSpec de trabajo ──
+    all_roles = discover_roles()
+    role_by_key = {role.KEY: role for role in all_roles}
+    selected_roles, run_all = choose_roles(all_roles, with_data)
+    steps = workflow_steps(with_data, roles=selected_roles)
+    selected_change = select_change(Path(__file__).resolve().parent)
+    if selected_change:
+        ui.success(f"Cambio OpenSpec: {selected_change.name} ({selected_change.done}/{selected_change.total} tasks)")
+    # ── Repositorio de destino donde se copiará output/ al terminar ──
     target_repo = select_target_repo(Path(__file__).resolve().parent)
     # ── MCP Proyectos: descubrir tools ────────────────────────────────
     print("\n[MCP Proyectos] Autenticando...")
@@ -534,17 +555,26 @@ def main():
 
     mode = "with-data" if with_data else "standard"
     previous_mode = checkpoint.get("workflow_mode", "standard")
-    if steps_state and previous_mode != mode:
-        print("El checkpoint pertenece a otro flujo. Conserva output/ moviéndolo a otra carpeta antes de cambiar CREWAI_INCLUDE_DATA.")
-        raise SystemExit(1)
-    checkpoint["workflow_mode"] = mode
+    if run_all:
+        if steps_state and previous_mode != mode:
+            print("El checkpoint pertenece a otro flujo. Conserva output/ moviéndolo a otra carpeta antes de cambiar CREWAI_INCLUDE_DATA.")
+            raise SystemExit(1)
+        checkpoint["workflow_mode"] = mode
     checkpoint["feature_title"] = feature["title"]
+    checkpoint["openspec_change"] = selected_change.name if selected_change else None
 
     # ── Recuperar outputs aprobados del checkpoint ────────────────────
     approved_outputs: dict = {}
     for step_key, step_data in steps_state.items():
         if step_data.get("status") == "approved":
             approved_outputs[step_key] = step_data.get("output", "")
+
+    # Un solo rol: los informes de los demás roles, si existen en output/, sirven de contexto
+    if not run_all:
+        for other in all_roles:
+            report = OUTPUT_DIR / report_folder(other) / other.SPEC_FILE
+            if other not in selected_roles and other.KEY not in approved_outputs and report.is_file():
+                approved_outputs[other.KEY] = report.read_text(encoding="utf-8")
 
     # ── Enriquecer backstory del Architect con brief del feature ──────
     architect_agent.backstory += HEX_PROMPT_PREFIX + (
@@ -558,15 +588,28 @@ def main():
 
 
     # Andamiaje de build: en este punto, con proyecto y feature ya elegidos.
-    ensure_scaffolding(OUTPUT_DIR)
+    # Solo si algún rol seleccionado escribe en backend-nestjs/frontend-react.
+    if any(needs_scaffolding(output_folders(role)) for role in selected_roles):
+        ensure_scaffolding(OUTPUT_DIR)
 
     print("\n" + "=" * 60)
     print(f"S1 CrewAI — HITL — Feature: {feature['title']}")
+    print("Rol: " + ("Todos" if run_all else selected_roles[0].LABEL)
+          + (f" · OpenSpec: {selected_change.name}" if selected_change else ""))
     print("Pasos: " + " → ".join(step[1] for step in steps))
     print("=" * 60)
 
     # ── Loop HITL ─────────────────────────────────────────────────────
     for step_key, step_label, agent, spec_file, do_code in steps:
+        role = role_by_key[step_key]
+        folders = output_folders(role)
+
+        # Un solo rol ya aprobado: permite repetirlo en vez de omitirlo
+        if not run_all and steps_state.get(step_key, {}).get("status") == "approved":
+            ans = input(f"\n{step_label} ya fue aprobado. ¿Volver a ejecutarlo? [s/n]: ").strip().lower()
+            if ans == "s":
+                steps_state.pop(step_key)
+                approved_outputs.pop(step_key, None)
 
         # ── Ya aprobado en ejecución anterior → omitir ───────────────
         if steps_state.get(step_key, {}).get("status") == "approved":
@@ -574,7 +617,7 @@ def main():
             if do_code:
                 saved_out = steps_state[step_key].get("output", "")
                 if saved_out:
-                    extract_and_save_code(saved_out)
+                    extract_and_save_code(saved_out, folders)
             continue
 
         print(f"\n{'─'*60}")
@@ -585,13 +628,14 @@ def main():
         user_feedback = ""
         while True:
             # Rebuild tasks fresh en cada intento
-            task_map = build_tasks(feature, with_data)
+            task_map = build_tasks(feature, with_data, selected_roles)
             task = task_map[step_key]
 
             # Inyectar contexto de pasos anteriores en la descripción
             ctx_note = build_context_note(approved_outputs)
             if ctx_note:
                 task.description = task.description + ctx_note
+            task.description += change_context(selected_change, role)
 
             if with_data and step_key == "ai_engineer_1":
                 task.description += "\nUsa el diseño de persistencia aprobado de Datos y persistencia. No regeneres sus archivos SQL; implementa el acceso a datos del backend NestJS según ese contrato."
@@ -615,9 +659,9 @@ def main():
             if decision == "s":
                 # APROBADO
                 print(f"\n✅ {step_label} aprobado. Guardando artefactos...")
-                save_spec(spec_file, output)
+                save_spec(spec_file, output, report_folder(role))
                 if do_code:
-                    extract_and_save_code(output)
+                    extract_and_save_code(output, folders)
                 approved_outputs[step_key] = output
                 steps_state[step_key] = {"status": "approved", "output": output}
                 checkpoint["steps"] = steps_state
@@ -644,17 +688,23 @@ def main():
     presenter_text = str(getattr(approved_outputs.get("presenter", ""), "raw", approved_outputs.get("presenter", "")) or "")
 
     print("\n" + "=" * 60)
-    print("✅ TODOS LOS PASOS APROBADOS")
+    print("✅ TODOS LOS PASOS APROBADOS" if run_all else f"✅ {selected_roles[0].LABEL} APROBADO")
     print("=" * 60)
-    print("  output/specs/            → " + " · ".join(step[3] for step in steps))
-    print("  output/backend-nestjs/   → archivos .ts de NestJS extraídos")
-    print("  output/frontend-react/   → archivos .ts/.tsx/.css de React extraídos")
-    print("  output/db/               → .sql extraídos")
+    for role in selected_roles:
+        print(f"  output/{report_folder(role)}/{role.SPEC_FILE}")
+        for folder in output_folders(role) or ():
+            print(f"  output/{folder}/   ← {role.LABEL}")
+    if selected_change:
+        print(f"  OpenSpec: revisa y marca las tareas en openspec/changes/{selected_change.name}/tasks.md")
     print("=" * 60)
     copied = copy_output(OUTPUT_DIR, target_repo)
     ui.success(f"{len(copied)} archivos copiados de output/ a {target_repo}")
-    print("\nInforme del Presenter (extracto):")
-    print(presenter_text[-500:] if len(presenter_text) > 500 else presenter_text)
+    approved_labels = [step[1] for step in steps if steps_state.get(step[0], {}).get("status") == "approved"]
+    publish_output(target_repo, copied, feature, [role.LABEL for role in selected_roles],
+                   selected_change.name if selected_change else None, approved_labels)
+    if presenter_text and any(role.KEY == "presenter" for role in selected_roles):
+        print("\nInforme del Presenter (extracto):")
+        print(presenter_text[-500:] if len(presenter_text) > 500 else presenter_text)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 """Orden de ejecución y activación explícita del séptimo perfil."""
 import os
-from agents import product_owner, architect, data, ai_engineer_1, ai_engineer_2, qa_security, presenter
+from crew.roles import discover_roles
 
-ROLES = (product_owner, architect, ai_engineer_1, ai_engineer_2, qa_security, presenter)
-DATA_ROLES = (product_owner, architect, data, ai_engineer_1, ai_engineer_2, qa_security, presenter)
+DATA_ROLES = discover_roles()
+ROLES = tuple(role for role in DATA_ROLES if role.KEY != "data")
 
 
 def include_data() -> bool:
@@ -13,13 +13,13 @@ def include_data() -> bool:
     return value == "true"
 
 
-def workflow_steps(with_data=False):
+def workflow_steps(with_data=False, roles=None):
     return tuple((role.KEY, role.LABEL, role.agent, role.SPEC_FILE, role.EXTRACT_CODE)
-                 for role in (DATA_ROLES if with_data else ROLES))
+                 for role in (roles or (DATA_ROLES if with_data else ROLES)))
 
 
 STEPS = workflow_steps()
 
 
-def build_tasks(feature: dict, with_data=False) -> dict:
-    return {role.KEY: role.build_task(feature) for role in (DATA_ROLES if with_data else ROLES)}
+def build_tasks(feature: dict, with_data=False, roles=None) -> dict:
+    return {role.KEY: role.build_task(feature) for role in (roles or (DATA_ROLES if with_data else ROLES))}

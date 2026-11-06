@@ -272,6 +272,14 @@ Definición de «listo» (para las HU del alcance): cada AC tiene al menos un te
 de la persona, evidencia real; hay un happy path y un caso borde por HU, guardrails y HITL del Crew están
 cubiertos si el alcance los incluye, y `python tools/wallee.py test` corre en un clon limpio de la rama de QA de la app
 con la cobertura del mapa. Lo no probado se declara como pendiente.
+
+# Salida en /output (editable por el equipo)
+Los archivos que emitas se guardan en /output según estas líneas (esta regla manda sobre las rutas de ejemplo de
+arriba): el código de las pruebas va en `test/` y la
+revisión de seguridad (Markdown, p. ej. `security/security-review.md`) en `security/`. Empieza cada bloque de código
+con su ruta completa en un comentario (`// test/<archivo>.spec.ts`, `// security/<archivo>.md`).
+Carpetas de salida en /output: test, security
+Carpeta del informe en /output: specs
 """.strip()
 
 agent = Agent(

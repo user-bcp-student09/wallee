@@ -27,6 +27,40 @@ Cada participante edita el archivo de su rol:
 
 El orden es `product_owner → architect → ai_engineer_1 → ai_engineer_2 → qa_security → presenter`.
 La aprobación humana se conserva entre etapas.
+
+## Elegir rol y cambio OpenSpec
+
+Al iniciar, `main.py` pregunta **«Selecciona el rol que desea ejecutar»**. La lista sale de los archivos de `agents/`
+(más la opción **Todos**, que corre el flujo completo; `data` entra solo con `CREWAI_INCLUDE_DATA=true`).
+Con un solo rol se reutiliza el contexto de los demás (checkpoint o informes ya generados en `output/`).
+Después pregunta el cambio de `openspec/changes/` (lo que muestra `openspec list`); su propuesta, specs, diseño y las
+tareas con `[rol: ...]` de ese rol se agregan al prompt. Para omitir las preguntas: `WALLEE_ROLE` (clave del rol o `all`)
+y `WALLEE_OPENSPEC_CHANGE` (nombre del cambio o `none`).
+
+Las carpetas de `output/` de cada rol se editan en su prompt (`INSTRUCTIONS`) con estas líneas:
+
+```text
+Carpetas de salida en /output: test, security
+Carpeta del informe en /output: specs
+```
+
+Por defecto: `qa_security` → `test` y `security`; `ai_engineer_1` y `ai_engineer_2` → `backend-nestjs` y `frontend-react`;
+`data` → `db`; `product_owner`, `architect` y `presenter` → `specs`. Los `.md` solo se guardan si su ruta empieza con
+una carpeta declarada (por ejemplo `// security/security-review.md`).
+
+## Push y Pull Request con preaprobación
+
+Al terminar, tras copiar `output/` al repo destino, `crew/publish.py`:
+
+1. crea una rama `wallee/<rol>-<feature>` (si el repo está en su rama principal; si ya estás en otra, la reutiliza),
+   hace commit solo de los archivos copiados y `git push -u origin <rama>`;
+2. muestra la **preaprobación**: destino, título, descripción y archivos. Opciones: `s` crear · `d` alternar borrador ·
+   `e` editar título · `n` no crear (la rama ya queda publicada);
+3. con `s` abre el PR con `gh pr create`. Si el repo tiene `pull_request_template.md`, se conserva y el resumen
+   generado (feature, rol, cambio OpenSpec, pasos aprobados, archivos) se agrega debajo.
+
+Requiere `gh` autenticado (`gh auth login`) y un remoto `origin`. Si algo falla, el `output/` ya está copiado y solo se
+informa el error. `WALLEE_PUBLISH=false` omite todo este paso.
 Consulta [TEAM.md](TEAM.md) para crear el repo de tu equipo y repartir los archivos.
 
 ## Preparar el entorno
