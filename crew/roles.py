@@ -3,6 +3,7 @@ import importlib
 import os
 import pkgutil
 import re
+import threading
 
 import agents
 from crew import ui
@@ -19,8 +20,7 @@ DEFAULT_REPORT_FOLDER = "specs"
 _FOLDER = re.compile(r"^[A-Za-z0-9][\w.-]*$")
 
 
-def discover_roles() -> tuple:
-    """Módulos de agents/ que cumplen el contrato de rol, en el orden del flujo."""
+def _load_roles() -> tuple:
     found = {}
     for info in pkgutil.iter_modules(agents.__path__):
         module = importlib.import_module(f"agents.{info.name}")
@@ -29,6 +29,36 @@ def discover_roles() -> tuple:
     known = [found[key] for key in CANONICAL_ORDER if key in found]
     extra = [found[key] for key in sorted(found) if key not in CANONICAL_ORDER]
     return tuple(known + extra)
+
+
+_lock = threading.Lock()
+_cache: tuple | None = None
+
+
+def discover_roles() -> tuple:
+    """Módulos de agents/ que cumplen el contrato de rol, en el orden del flujo.
+
+    Importar los agentes carga crewai (~10 s); se hace una sola vez y quien llegue mientras
+    otro hilo lo está cargando espera su resultado.
+    """
+    global _cache
+    with _lock:
+        if _cache is None:
+            _cache = _load_roles()
+        return _cache
+
+
+def prewarm() -> threading.Thread:
+    """Carga crewai y los agentes en segundo plano mientras el usuario responde las preguntas."""
+    def work():
+        try:
+            discover_roles()
+        except Exception:
+            pass  # el hilo principal repetirá la carga y mostrará el error real
+
+    thread = threading.Thread(target=work, name="prewarm", daemon=True)
+    thread.start()
+    return thread
 
 
 def _folders(text: str) -> tuple:
@@ -54,6 +84,16 @@ def report_folder(role) -> str:
 
 def union_folders(roles) -> set:
     return {folder for role in roles for folder in (output_folders(role) or ())}
+
+
+def saved_roles(all_roles, with_data: bool, value: str | None) -> tuple | None:
+    """Rol guardado ('all' o clave) como (roles, es_todos); None si ya no existe."""
+    if value == ALL:
+        return tuple(role for role in all_roles if with_data or role.KEY != "data"), True
+    for role in all_roles:
+        if role.KEY == value:
+            return (role,), False
+    return None
 
 
 def choose_roles(all_roles, with_data: bool, ask=ui.prompt) -> tuple:

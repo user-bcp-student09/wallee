@@ -1,5 +1,6 @@
 """Publica lo copiado a output/: rama, commit, push y PR con un paso de preaprobación humana."""
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -11,6 +12,9 @@ TEMPLATES = (".github/pull_request_template.md", "pull_request_template.md", "do
 PREVIEW_LINES = 40
 FILES_IN_BODY = 40
 FALLBACK_BASES = ("main", "master")
+DEFAULT_PR_REPO = "user-bcp-student17/wallee-app"
+_REPO_RE = re.compile(r"^[\w.-]+/[\w.-]+$")
+_GITHUB_URL_RE = re.compile(r"github\.com[:/]+([\w.-]+)/([\w.-]+?)(?:\.git)?/?$", re.IGNORECASE)
 
 
 class PublishError(Exception):
@@ -55,6 +59,37 @@ def default_base(repo: Path) -> str:
     return FALLBACK_BASES[0]
 
 
+def parse_github_repo(value: str) -> str | None:
+    """'owner/repo' a partir de 'owner/repo' o de una URL https/ssh de GitHub; None si no se reconoce."""
+    value = value.strip()
+    if _REPO_RE.match(value) and "github.com" not in value:
+        return value.removesuffix(".git")
+    found = _GITHUB_URL_RE.search(value)
+    return f"{found.group(1)}/{found.group(2)}" if found else None
+
+
+def ask_pr_repo(saved: str | None, ask=ui.prompt) -> str:
+    """Pide el repo donde se abrirá el PR; Enter acepta el guardado (o el predeterminado)."""
+    default = saved or DEFAULT_PR_REPO
+    while True:
+        answer = ask(f"Repo destino del PR (owner/repo) [{default}]: ").strip()
+        if not answer:
+            return default
+        repo = parse_github_repo(answer)
+        if repo:
+            return repo
+        ui.error("Formato inválido. Usa owner/repo o la URL del repo en GitHub.")
+
+
+def _repo_base(target: Path, repo: str, origin_repo: str | None) -> str:
+    if origin_repo and origin_repo.lower() == repo.lower():
+        return default_base(target)
+    try:
+        return gh(target, "repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name") or default_base(target)
+    except PublishError:
+        return default_base(target)
+
+
 def _free_branch(repo: Path, wanted: str) -> str:
     name, n = wanted, 2
     while True:
@@ -95,8 +130,10 @@ def build_pr_body(feature: dict, role_labels, change: str | None, files, approve
     return f"{template}\n\n---\n\n{body}" if template else body
 
 
-def _preview(base, branch, title, body, draft, files):
+def _preview(base, branch, title, body, draft, files, repo=None):
     ui.heading("Preaprobación del Pull Request")
+    if repo:
+        print(f"  Repo    : {repo}")
     print(f"  Destino : {base} ← {branch}")
     print(f"  Título  : {title}")
     print(f"  Tipo    : {'borrador (draft)' if draft else 'listo para revisión'}")
@@ -109,11 +146,11 @@ def _preview(base, branch, title, body, draft, files):
         print(f"  … ({len(body_lines) - PREVIEW_LINES} líneas más)")
 
 
-def preapprove(base, branch, title, body, files, ask=ui.prompt) -> tuple:
+def preapprove(base, branch, title, body, files, ask=ui.prompt, repo=None) -> tuple:
     """Muestra el PR y pide la decisión. Devuelve (decisión 's'|'n', título, borrador)."""
     draft = False
     while True:
-        _preview(base, branch, title, body, draft, files)
+        _preview(base, branch, title, body, draft, files, repo)
         ans = ask("¿Crear el PR? [s] sí · [d] alternar borrador · [e] editar título · [n] no crear: ").strip().lower()
         if ans in ("s", "n"):
             return ans, title, draft
@@ -126,32 +163,33 @@ def preapprove(base, branch, title, body, files, ask=ui.prompt) -> tuple:
 
 
 def publish_output(target: Path, files, feature: dict, role_labels, change: str | None = None,
-                   approved=(), ask=ui.prompt) -> str | None:
+                   approved=(), ask=ui.prompt, pr_repo: str | None = None, on_pr_repo=None) -> str | None:
     """Commit + push de lo copiado y PR tras preaprobación. Devuelve la URL del PR o None.
 
-    Nunca lanza: el output ya está copiado y un fallo aquí solo se informa.
-    WALLEE_PUBLISH=false lo desactiva.
+    El push va a `origin`; el PR se abre en el repo que se pide aquí (pr_repo es el guardado, por defecto
+    DEFAULT_PR_REPO) y se informa a on_pr_repo para guardarlo. Nunca lanza: el output ya está copiado y un
+    fallo aquí solo se informa. WALLEE_PUBLISH=false lo desactiva.
     """
     if os.getenv("WALLEE_PUBLISH", "true").strip().lower() == "false":
         ui.success("Publicación omitida (WALLEE_PUBLISH=false).")
         return None
     try:
-        return _publish(Path(target), [Path(f) for f in files], feature, list(role_labels), change, list(approved), ask)
+        return _publish(Path(target), [Path(f) for f in files], feature, list(role_labels), change, list(approved), ask,
+                        pr_repo, on_pr_repo)
     except PublishError as exc:
         ui.error(f"No se pudo publicar: {exc}")
         print(f"  El output ya está copiado en {target}; puedes commitear y abrir el PR a mano.")
         return None
 
 
-def _publish(target, files, feature, role_labels, change, approved, ask):
+def _publish(target, files, feature, role_labels, change, approved, ask, pr_repo=None, on_pr_repo=None):
     try:
         git(target, "rev-parse", "--is-inside-work-tree")
     except PublishError:
         raise PublishError("el repositorio de destino no es un repo git") from None
     if not gh_available():
         raise PublishError("falta GitHub CLI (gh); instálalo y ejecuta `gh auth login`")
-    git(target, "remote", "get-url", "origin")
-    base = default_base(target)
+    origin_repo = parse_github_repo(git(target, "remote", "get-url", "origin"))
     current = git(target, "branch", "--show-current")
     if not current:
         raise PublishError("el repositorio de destino está en HEAD desacoplado")
@@ -167,8 +205,12 @@ def _publish(target, files, feature, role_labels, change, approved, ask):
         return None
 
     suffix = "all" if len(role_labels) > 1 else feature_slug(role_labels[0])
+    repo = ask_pr_repo(pr_repo, ask)
+    if on_pr_repo:
+        on_pr_repo(repo)
+    base = _repo_base(target, repo, origin_repo)
     branch = current
-    if current == base:
+    if current in (base, default_base(target)):
         branch = _free_branch(target, f"wallee/{suffix}-{feature_slug(feature.get('title', ''))}"[:80].rstrip("-"))
         git(target, "checkout", "-b", branch)
     title = f"[{', '.join(role_labels) if len(role_labels) < 3 else 'Wallee'}] {feature.get('title', 'feature')}"
@@ -177,11 +219,13 @@ def _publish(target, files, feature, role_labels, change, approved, ask):
     ui.success(f"Push realizado a origin/{branch}")
 
     body = build_pr_body(feature, role_labels, change, staged, approved, pr_template(target))
-    decision, title, draft = preapprove(base, branch, title, body, staged, ask)
+    decision, title, draft = preapprove(base, branch, title, body, staged, ask, repo)
     if decision == "n":
-        print(f"  PR no creado. La rama origin/{branch} quedó publicada; puedes abrirlo luego con `gh pr create`.")
+        print(f"  PR no creado. La rama origin/{branch} quedó publicada; puedes abrirlo luego con `gh pr create --repo {repo}`.")
         return None
-    args = ["pr", "create", "--base", base, "--head", branch, "--title", title, "--body-file", "-"]
+    cross_repo = origin_repo and origin_repo.lower() != repo.lower()
+    head = f"{origin_repo.split('/')[0]}:{branch}" if cross_repo else branch
+    args = ["pr", "create", "--repo", repo, "--base", base, "--head", head, "--title", title, "--body-file", "-"]
     if draft:
         args.append("--draft")
     url = (gh(target, *args, input=body).splitlines() or [""])[-1]

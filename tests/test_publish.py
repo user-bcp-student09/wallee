@@ -39,6 +39,8 @@ class PublishTests(unittest.TestCase):
         self.calls = []
 
         def fake_gh(repo, *args, input=None):
+            if args[0] == "repo":
+                return "main"
             self.calls.append((args, input))
             return "https://github.com/o/r/pull/7"
 
@@ -61,7 +63,7 @@ class PublishTests(unittest.TestCase):
 
     def test_pushes_branch_and_opens_pr_after_approval(self):
         files = self.write("test/a.spec.ts", "security/review.md")
-        url = self.run_publish(files, ["s"])
+        url = self.run_publish(files, ["", "s"])
         self.assertEqual(url, "https://github.com/o/r/pull/7")
         branch = sh(self.repo, "branch", "--show-current")
         self.assertEqual(branch, "wallee/qa-security-transfer-funds")
@@ -76,14 +78,46 @@ class PublishTests(unittest.TestCase):
         self.assertIn("w1-demo", body)
         self.assertIn("`test/a.spec.ts`", body)
 
+    def test_asks_pr_repo_defaults_and_remembers_it(self):
+        saved = []
+        self.run_publish(self.write("test/a.spec.ts"), ["", "s"], on_pr_repo=saved.append)
+        args, _ = self.calls[0]
+        self.assertEqual(args[args.index("--repo") + 1], "user-bcp-student17/wallee-app")
+        self.assertEqual(saved, ["user-bcp-student17/wallee-app"])
+
+    def test_custom_and_saved_pr_repo_from_fork_origin(self):
+        sh(self.repo, "remote", "set-url", "origin", "https://github.com/ntt6/wallee-app.git")
+        real = publish.git
+
+        def fake_git(repo, *args, **kw):
+            return "" if args[:1] == ("push",) else real(repo, *args, **kw)
+
+        with patch.object(publish, "git", fake_git):
+            self.run_publish(self.write("test/a.spec.ts"), ["https://github.com/Otro/repo-x", "s"], pr_repo="a/b")
+        args, _ = self.calls[0]
+        self.assertEqual(args[args.index("--repo") + 1], "Otro/repo-x")
+        self.assertEqual(args[args.index("--head") + 1], "ntt6:wallee/qa-security-transfer-funds")
+
+    def test_invalid_pr_repo_is_asked_again_and_saved_one_is_the_default(self):
+        saved = []
+        self.run_publish(self.write("test/a.spec.ts"), ["no valido", "", "s"], pr_repo="a/b", on_pr_repo=saved.append)
+        args, _ = self.calls[0]
+        self.assertEqual(args[args.index("--repo") + 1], "a/b")
+        self.assertEqual(saved, ["a/b"])
+
+    def test_parse_github_repo(self):
+        for value, expected in (("o/r", "o/r"), ("https://github.com/o/r.git", "o/r"), ("git@github.com:o/r.git", "o/r"),
+                                ("https://github.com/o/r/", "o/r"), ("C:\\x\\remote.git", None), ("/tmp/a/b.git", None)):
+            self.assertEqual(publish.parse_github_repo(value), expected)
+
     def test_rejecting_preapproval_pushes_but_creates_no_pr(self):
-        url = self.run_publish(self.write("test/a.spec.ts"), ["n"])
+        url = self.run_publish(self.write("test/a.spec.ts"), ["", "n"])
         self.assertIsNone(url)
         self.assertEqual(self.calls, [])
         self.assertIn("wallee/", sh(self.repo, "ls-remote", "--heads", "origin"))
 
     def test_draft_and_title_edit(self):
-        url = self.run_publish(self.write("test/a.spec.ts"), ["d", "e", "Mi título", "s"])
+        url = self.run_publish(self.write("test/a.spec.ts"), ["", "d", "e", "Mi título", "s"])
         self.assertTrue(url)
         args, _ = self.calls[0]
         self.assertIn("--draft", args)
@@ -93,7 +127,7 @@ class PublishTests(unittest.TestCase):
         (self.repo / ".github").mkdir()
         (self.repo / ".github" / "pull_request_template.md").write_text("## Qué cambia\n- [ ] Probado", encoding="utf-8")
         sh(self.repo, "checkout", "-b", "mi-rama")
-        self.run_publish(self.write("test/a.spec.ts"), ["s"])
+        self.run_publish(self.write("test/a.spec.ts"), ["", "s"])
         self.assertEqual(sh(self.repo, "branch", "--show-current"), "mi-rama")
         args, body = self.calls[0]
         self.assertTrue(body.startswith("## Qué cambia\n- [ ] Probado"))

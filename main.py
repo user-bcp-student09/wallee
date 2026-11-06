@@ -1,7 +1,9 @@
 """S1 CrewAI — Generador BCP con HITL y checkpoint por paso.
 
 Flujo:
-  0. Pregunta qué rol ejecutar (los de agents/ o «Todos») y qué cambio OpenSpec de openspec/changes/ usar.
+  0. Si hay una selección guardada (.wallee-state.json: rol, OpenSpec, repo destino, proyecto) la muestra y solo pide
+     reconfirmarla; si se cambia, vuelve a preguntar. El feature se elige siempre. crewai se carga en segundo plano.
+     Pregunta qué rol ejecutar (los de agents/ o «Todos») y qué cambio OpenSpec de openspec/changes/ usar.
      Las carpetas de /output de cada rol salen de las líneas «Carpetas de salida en /output:» de su prompt.
   1. Conecta al MCP Projects → lista proyectos → elige proyecto → lista backlog → elige feature
   2. Por cada agente elegido (Product Owner, Architect, AI Engineer 1, AI Engineer 2, QA & Security, Presenter), corre un mini-Crew de un solo paso.
@@ -66,17 +68,19 @@ import time
 import threading
 import textwrap
 from pathlib import Path
-from crewai import Crew, Process
 
+# crewai y los agentes (lo más lento del arranque) se cargan en segundo plano: ver crew.roles.prewarm()
 from crew.workflow import build_tasks, include_data, workflow_steps
-from crew.roles import choose_roles, discover_roles, output_folders, report_folder, union_folders
-from crew.openspec_changes import change_context, select_change
+from crew.roles import choose_roles, discover_roles, output_folders, prewarm, report_folder, saved_roles
+from crew.openspec_changes import change_context, find_change, select_change
+from crew.session_state import USE, STATE_NAME, confirm_saved, find_project, has_selection, load_state, save_state
+from crew.lifecycle import describe_item, finish_item, start_item
 from crew.scaffold import BACKEND_DIR, FRONTEND_DIR, ensure_scaffolding
 from crew.target_repo import copy_output, select_target_repo
 from crew.publish import publish_output
+from crew.prefetch import Prefetch
 from crew import ui
 from crew.code_paths import FILENAME_PATTERN, feature_slug, guess_filename, resolve_destination
-from agents.architect import agent as architect_agent
 
 # ── MCP clients ────────────────────────────────────────────────────
 from mcp_projects import (
@@ -95,6 +99,7 @@ VERBOSE_MCP_TOOLS = False
 # ── Rutas base ─────────────────────────────────────────────────────
 OUTPUT_DIR      = Path(__file__).parent / "output"
 CHECKPOINT_FILE = OUTPUT_DIR / ".checkpoint.json"
+STATE_FILE      = Path(__file__).parent / STATE_NAME   # última selección (rol, OpenSpec, destino, proyecto, feature)
 OUTPUT_DIR.mkdir(exist_ok=True)   # lo necesita save_checkpoint()
 # ensure_scaffolding() NO se llama aquí: escribiría en output/ con sólo importar
 # el módulo, antes del MCP, del feature elegido y del primer agente.
@@ -262,6 +267,7 @@ class StepLoadingSpinner:
 
 def run_step(agent, task) -> str:
     """Ejecuta un mini-Crew de un solo agente y retorna el output en texto."""
+    from crewai import Crew, Process   # import pesado: solo cuando se ejecuta un agente
     mini_crew = Crew(
         agents=[agent],
         tasks=[task],
@@ -467,31 +473,69 @@ def build_context_note(approved_outputs: dict) -> str:
 # MAIN
 # ═══════════════════════════════════════════════════════════════════
 
+def _wait_for_agents(loader):
+    """Espera la carga en segundo plano de crewai y los agentes (avisa si aún no terminó)."""
+    if loader.is_alive():
+        print("  ⏳ Cargando agentes (primera vez en esta sesión)...")
+    return discover_roles()
+
+
 def main():
     with_data = include_data()
+    loader = prewarm()   # importar crewai y los agentes tarda; se hace mientras el usuario responde
     ui.banner()
-    # ── Rol a ejecutar (carpeta agents/ o «Todos») y cambio OpenSpec de trabajo ──
-    all_roles = discover_roles()
-    role_by_key = {role.KEY: role for role in all_roles}
-    selected_roles, run_all = choose_roles(all_roles, with_data)
-    steps = workflow_steps(with_data, roles=selected_roles)
-    selected_change = select_change(Path(__file__).resolve().parent)
+    root = Path(__file__).resolve().parent
+    # ── Selección guardada: solo se reconfirma; si cambia, se vuelve a elegir ──
+    state = load_state(STATE_FILE)
+    hint_id = (state.get("project") or {}).get("id")
+    prefetch = Prefetch()   # la red del MCP es lenta: se pide mientras el usuario responde
+    prefetch.start("projects", list_projects)
+    if hint_id:
+        prefetch.start("items", list_project_items, hint_id)
+    use_saved = has_selection(state) and confirm_saved(state) == USE
+    if not use_saved:
+        state = {k: state[k] for k in ("pr_repo",) if k in state}   # el repo del PR se conserva
+
+    # ── Rol a ejecutar (carpeta agents/ o «Todos») ──
+    selected_roles = run_all = None
+    if not (use_saved and state.get("role") and not os.getenv("WALLEE_ROLE")):
+        selected_roles, run_all = choose_roles(_wait_for_agents(loader), with_data)
+        state["role"] = "all" if run_all else selected_roles[0].KEY
+        state["role_label"] = "Todos" if run_all else selected_roles[0].LABEL
+
+    # ── Cambio OpenSpec de trabajo ──
+    if use_saved and "openspec_change" in state and not os.getenv("WALLEE_OPENSPEC_CHANGE"):
+        selected_change = find_change(root, state["openspec_change"])
+        if selected_change is None and state["openspec_change"]:
+            ui.error(f"El cambio OpenSpec guardado '{state['openspec_change']}' ya no existe.")
+            selected_change = select_change(root)
+    else:
+        selected_change = select_change(root)
+    state["openspec_change"] = selected_change.name if selected_change else None
     if selected_change:
         ui.success(f"Cambio OpenSpec: {selected_change.name} ({selected_change.done}/{selected_change.total} tasks)")
+
     # ── Repositorio de destino donde se copiará output/ al terminar ──
-    target_repo = select_target_repo(Path(__file__).resolve().parent)
-    # ── MCP Proyectos: descubrir tools ────────────────────────────────
+    saved_target = Path(state["target_repo"]) if use_saved and state.get("target_repo") else None
+    if saved_target and saved_target.is_dir() and not os.getenv("WALLEE_TARGET_REPO"):
+        target_repo = saved_target
+        ui.success(f"Repositorio de salida: {target_repo}")
+    else:
+        target_repo = select_target_repo(root)
+    state["target_repo"] = str(target_repo)
+    save_state(STATE_FILE, state)   # se guarda ya: si interrumpes más adelante, no se vuelve a preguntar
+
+    # ── MCP Proyectos ─────────────────────────────────────────────────
     print("\n[MCP Proyectos] Autenticando...")
-    _proj_tools = proj_tools()
     if VERBOSE_MCP_TOOLS:
         print("[MCP Proyectos] Herramientas disponibles:")
-        for t in _proj_tools:
+        for t in proj_tools():
             print(f"  · {t['name']}: {t['description']}")
     else:
-        print("[MCP Proyectos] Herramientas cargadas correctamente.")
+        print("[MCP Proyectos] Conectado.")
 
     # ── Selección de proyecto ─────────────────────────────────────────
-    projects = list_projects()
+    projects = prefetch.get("projects", list_projects)
     if not projects:
         print("[MCP Proyectos] ✗ No se encontraron proyectos.")
         raise SystemExit(1)
@@ -499,6 +543,9 @@ def main():
     if len(projects) == 1:
         selected_project = projects[0]
         print(f"\n[MCP Proyectos] Proyecto asignado: {selected_project['title']}")
+    elif use_saved and find_project(projects, state.get("project")):
+        selected_project = find_project(projects, state["project"])
+        print(f"\n[MCP Proyectos] Proyecto guardado: {selected_project['title']}")
     else:
         print("\n[MCP Proyectos] Proyectos disponibles:")
         for i, proj in enumerate(projects, 1):
@@ -510,18 +557,21 @@ def main():
                 selected_project = projects[int(sel) - 1]
                 break
             print(f"  ✗ Entrada inválida.")
+    state["project"] = {"id": selected_project.get("id"), "title": selected_project.get("title")}
+    save_state(STATE_FILE, state)
 
-    # ── Selección de feature del backlog ─────────────────────────────
-    backlog = list_project_items(selected_project["id"])
+    # ── Selección de feature del backlog (siempre se elige: cambia en cada ejecución) ──
+    # Si es el proyecto que ya se pidió en segundo plano, se reutiliza ese backlog
+    backlog = (prefetch.get("items", list_project_items, hint_id) if selected_project.get("id") == hint_id
+               else list_project_items(selected_project["id"]))
     if not backlog:
         print("[MCP Proyectos] ✗ El proyecto no tiene items en el backlog.")
         raise SystemExit(1)
 
     print(f"\n[MCP Proyectos] Backlog de '{selected_project['title']}':")
     for i, item in enumerate(backlog, 1):
-        icon = "⚫" if item.get("state", "").lower() == "closed" else "🟢"
-        num  = f"#{item['number']} — " if item.get("number") else ""
-        print(f"  {i}. {icon} {num}{item.get('title', '(sin título)')}")
+        num = f"#{item['number']} — " if item.get("number") else ""
+        print(f"  {i:>2}. {describe_item(item)} {num}{item.get('title', '(sin título)')}")
 
     while True:
         sel = input(f"\nSelecciona el número de feature [1-{len(backlog)}]: ").strip()
@@ -534,6 +584,19 @@ def main():
     print(f"\n[MCP Proyectos] Feature cargado: {feature['title']}")
     print(f"[MCP Proyectos] Criterios de aceptación: {feature['acceptance_criteria']}")
 
+    # ── Roles ya cargados (en segundo plano) ──
+    all_roles = _wait_for_agents(loader)
+    role_by_key = {role.KEY: role for role in all_roles}
+    if selected_roles is None:
+        picked = saved_roles(all_roles, with_data, state["role"])
+        if picked is None:
+            ui.error(f"El rol guardado '{state['role']}' ya no existe.")
+            picked = choose_roles(all_roles, with_data)
+            state["role"] = "all" if picked[1] else picked[0][0].KEY
+            state["role_label"] = "Todos" if picked[1] else picked[0][0].LABEL
+            save_state(STATE_FILE, state)
+        selected_roles, run_all = picked
+    steps = workflow_steps(with_data, roles=selected_roles)
     global FEATURE_SLUG
     FEATURE_SLUG = feature_slug(feature["title"])
 
@@ -577,7 +640,7 @@ def main():
                 approved_outputs[other.KEY] = report.read_text(encoding="utf-8")
 
     # ── Enriquecer backstory del Architect con brief del feature ──────
-    architect_agent.backstory += HEX_PROMPT_PREFIX + (
+    role_by_key["architect"].agent.backstory += HEX_PROMPT_PREFIX + (
         f"\n\n## Feature brief\n"
         f"**{feature['title']}**\n\n{feature['description']}\n\n"
         f"**Criterios de aceptación:** {', '.join(feature['acceptance_criteria'])}"
@@ -598,6 +661,9 @@ def main():
           + (f" · OpenSpec: {selected_change.name}" if selected_change else ""))
     print("Pasos: " + " → ".join(step[1] for step in steps))
     print("=" * 60)
+
+    # Ciclo de vida: el item pasa de Todo a In Progress al empezar a trabajarlo
+    start_item(selected_project, selected_item)
 
     # ── Loop HITL ─────────────────────────────────────────────────────
     for step_key, step_label, agent, spec_file, do_code in steps:
@@ -700,8 +766,15 @@ def main():
     copied = copy_output(OUTPUT_DIR, target_repo)
     ui.success(f"{len(copied)} archivos copiados de output/ a {target_repo}")
     approved_labels = [step[1] for step in steps if steps_state.get(step[0], {}).get("status") == "approved"]
+    def remember_pr_repo(repo):
+        state["pr_repo"] = repo
+        save_state(STATE_FILE, state)
+
     publish_output(target_repo, copied, feature, [role.LABEL for role in selected_roles],
-                   selected_change.name if selected_change else None, approved_labels)
+                   selected_change.name if selected_change else None, approved_labels,
+                   pr_repo=state.get("pr_repo"), on_pr_repo=remember_pr_repo)
+    # Ciclo de vida: con todos los pasos aprobados, ofrece pasar el item a Done en el Project
+    finish_item(selected_project, selected_item)
     if presenter_text and any(role.KEY == "presenter" for role in selected_roles):
         print("\nInforme del Presenter (extracto):")
         print(presenter_text[-500:] if len(presenter_text) > 500 else presenter_text)

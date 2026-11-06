@@ -2,6 +2,7 @@
 
 try:
     from rich.console import Console
+    from rich.markup import escape
     from rich.panel import Panel
     from rich.text import Text
     from rich.align import Align
@@ -68,4 +69,4 @@ def error(text: str) -> None:
 def prompt(text: str) -> str:
     if _console is None:
         return input(f"\n{text}")
-    return _console.input(f"\n[bold yellow]?[/] [bold]{text}[/]")
+    return _console.input(f"\n[bold yellow]?[/] [bold]{escape(text)}[/]")

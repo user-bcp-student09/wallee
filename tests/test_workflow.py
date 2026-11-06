@@ -110,6 +110,10 @@ class WorkflowTests(unittest.TestCase):
             stack.enter_context(patch.object(app, "choose_roles", return_value=(roles if with_data else ROLES, True)))
             stack.enter_context(patch.object(app, "select_change", return_value=None))
             stack.enter_context(patch.object(app, "publish_output"))
+            stack.enter_context(patch.object(app, "start_item"))
+            stack.enter_context(patch.object(app, "finish_item"))
+            stack.enter_context(patch.object(app, "STATE_FILE", output / ".state.json"))
+            stack.enter_context(patch.object(app, "confirm_saved", return_value="use"))
             stack.enter_context(patch("builtins.input", return_value="1"))
             stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
             if interrupt_data:
