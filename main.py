@@ -65,6 +65,7 @@ from crewai import Crew, Process
 from crew.workflow import build_tasks, include_data, workflow_steps
 from crew.scaffold import ensure_scaffolding
 from crew.target_repo import copy_output, select_target_repo
+from crew import ui
 from crew.code_paths import FILENAME_PATTERN, feature_slug, guess_filename, resolve_destination
 from agents.architect import agent as architect_agent
 
@@ -456,6 +457,7 @@ def main():
     with_data = include_data()
     steps = workflow_steps(with_data)
     # ── Repositorio de destino donde se copiará output/ al terminar ──
+    ui.banner()
     target_repo = select_target_repo(Path(__file__).resolve().parent)
     # ── MCP Proyectos: descubrir tools ────────────────────────────────
     print("\n[MCP Proyectos] Autenticando...")
@@ -650,7 +652,7 @@ def main():
     print("  output/db/               → .sql extraídos")
     print("=" * 60)
     copied = copy_output(OUTPUT_DIR, target_repo)
-    print(f"\n📦 {len(copied)} archivos copiados de output/ a {target_repo}")
+    ui.success(f"{len(copied)} archivos copiados de output/ a {target_repo}")
     print("\nInforme del Presenter (extracto):")
     print(presenter_text[-500:] if len(presenter_text) > 500 else presenter_text)
 

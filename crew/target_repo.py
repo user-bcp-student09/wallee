@@ -5,6 +5,8 @@ import re
 import shutil
 from pathlib import Path
 
+from crew import ui
+
 # Carpetas de participante: T52415-Samuel-Luis-Mendoza, u17721-gladys-patino-abanto, ...
 PARTICIPANT_PATTERN = re.compile(r"^[A-Za-z]\d{3,}(-[A-Za-z0-9]+)+$")
 SKIPPED_OUTPUT_FILES = {".checkpoint.json"}
@@ -42,25 +44,25 @@ def list_repo_dirs(parent: Path, exclude: Path | None = None) -> list[Path]:
     )
 
 
-def _choose(title: str, options: list[Path], ask=input) -> Path:
-    print(f"\n{title}")
+def _choose(title: str, options: list[Path], ask=ui.prompt) -> Path:
+    ui.heading(title)
     for i, option in enumerate(options, 1):
-        print(f"  {i} - {option.name}")
+        ui.option(i, option.name)
     while True:
-        sel = ask(f"\nSelecciona el número [1-{len(options)}]: ").strip()
+        sel = ask(f"Selecciona el número (1-{len(options)}): ").strip()
         if sel.isdigit() and 1 <= int(sel) <= len(options):
             return options[int(sel) - 1]
-        print("  ✗ Entrada inválida.")
+        ui.error("Entrada inválida.")
 
 
-def select_target_repo(source_repo: Path, ask=input) -> Path:
+def select_target_repo(source_repo: Path, ask=ui.prompt) -> Path:
     """Pide la carpeta del participante y luego el repositorio donde se copiará la salida."""
     override = os.getenv("WALLEE_TARGET_REPO")
     if override:
         target = Path(override).expanduser()
         if not target.is_dir():
             raise SystemExit(f"✗ WALLEE_TARGET_REPO no es una carpeta válida: {target}")
-        print(f"\n[Destino] Repositorio de salida (WALLEE_TARGET_REPO): {target}")
+        ui.success(f"Repositorio de salida (WALLEE_TARGET_REPO): {target}")
         return target
 
     root = documents_root(source_repo)
@@ -77,12 +79,11 @@ def select_target_repo(source_repo: Path, ask=input) -> Path:
         raise SystemExit(f"✗ No hay repositorios dentro de {participant}.")
 
     target = _choose(
-        "Perfecto, confirma el repositorio de salida. Listado de "
-        f"{participant.name}:",
+        f"Perfecto, confirma el repositorio de salida. Listado de {participant.name}:",
         repos,
         ask,
     )
-    print(f"\n[Destino] La salida se copiará en: {target}")
+    ui.success(f"La salida se copiará en: {target}")
     return target
 
 
