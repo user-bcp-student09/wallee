@@ -5,7 +5,6 @@
 __pycache__/
 *.py[cod]
 .DS_Store
-output/
 .tmp/
 evidence/*
 !evidence/.gitkeep
