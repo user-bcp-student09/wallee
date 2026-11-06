@@ -30,7 +30,7 @@ La aprobación humana se conserva entre etapas.
 
 ## Elegir rol y cambio OpenSpec
 
-Al iniciar, `main.py` pregunta **«Selecciona el rol que desea ejecutar»**. La lista sale de los archivos de `agents/`
+La primera vez, `main.py` pregunta **«Selecciona el rol que desea ejecutar»**. La lista sale de los archivos de `agents/`
 (más la opción **Todos**, que corre el flujo completo).
 Con un solo rol se reutiliza el contexto de los demás (checkpoint o informes ya generados en `output/`).
 Después pregunta el cambio de `openspec/changes/` (lo que muestra `openspec list`); su propuesta, specs, diseño y las
@@ -48,18 +48,50 @@ Por defecto: `qa_security` → `test` y `security`; `ai_engineer_1` y `ai_engine
 `product_owner`, `architect` y `presenter` → `specs`. Los `.md` solo se guardan si su ruta empieza con
 una carpeta declarada (por ejemplo `// security/security-review.md`).
 
+## Selección guardada
+
+Rol, cambio OpenSpec, repo destino y proyecto se guardan en `.wallee-state.json` (ignorado por git) apenas los eliges.
+En las siguientes ejecuciones se muestra esa selección y solo se reconfirma:
+
+- `Enter` → continúa con la selección guardada.
+- `c` → la cambia: vuelve a preguntar todo y guarda la nueva selección.
+
+El **feature del backlog no se guarda**: se elige en cada ejecución. Si algo guardado ya no existe (repo, proyecto,
+cambio OpenSpec o rol), solo se vuelve a preguntar esa parte. Las variables `WALLEE_ROLE`, `WALLEE_OPENSPEC_CHANGE` y
+`WALLEE_TARGET_REPO` siguen teniendo prioridad.
+
+## Estado del backlog y ciclo de vida
+
+El listado del backlog muestra el estado de cada item en el Project (⚪ Todo · 🟡 In Progress · ✅ Done). El ciclo de vida
+se actualiza solo en `crew/lifecycle.py`:
+
+- al empezar a trabajar un item en **Todo** → pasa a **In Progress**;
+- al terminar el flujo (todos los pasos aprobados, tras el push/PR) pregunta «¿Marcar … como Done?» (`Enter` sí · `n` no).
+
+Escribe con `manage_project.set_field_value` del MCP y, si falla, con la API GraphQL de GitHub vía `gh`. Necesita permiso de
+escritura en el Project; si no lo hay, se muestra el motivo y el item se puede cambiar a mano. `WALLEE_PROJECT_SYNC=false`
+desactiva las escrituras.
+
+## Arranque rápido
+
+`python main.py` muestra el banner de inmediato: `crewai` y los agentes (lo más lento) se cargan en segundo plano y la
+lista de proyectos y el backlog del MCP se piden mientras respondes la reconfirmación.
+
 ## Push y Pull Request con preaprobación
 
 Al terminar, tras copiar `output/` al repo destino, `crew/publish.py`:
 
-1. crea una rama `wallee/<rol>-<feature>` (si el repo está en su rama principal; si ya estás en otra, la reutiliza),
-   hace commit solo de los archivos copiados y `git push -u origin <rama>`;
-2. muestra la **preaprobación**: destino, título, descripción y archivos. Opciones: `s` crear · `d` alternar borrador ·
+1. pide el **repo destino del PR** (`owner/repo`; `Enter` acepta el guardado o `user-bcp-student17/wallee-app` la primera
+   vez) y lo guarda como `pr_repo` en `.wallee-state.json`;
+2. crea una rama `wallee/<rol>-<feature>` (si el repo está en su rama principal; si ya estás en otra, la reutiliza),
+   hace commit solo de los archivos copiados y `git push -u origin <rama>` (el fork de quien ejecuta);
+3. muestra la **preaprobación**: repo, destino, título, descripción y archivos. Opciones: `s` crear · `d` alternar borrador ·
    `e` editar título · `n` no crear (la rama ya queda publicada);
-3. con `s` abre el PR con `gh pr create`. Si el repo tiene `pull_request_template.md`, se conserva y el resumen
+4. con `s` abre el PR con `gh pr create --repo <destino>` (con `--head <owner-del-fork>:<rama>` si `origin` es otro repo).
+   Si el repo tiene `pull_request_template.md`, se conserva y el resumen
    generado (feature, rol, cambio OpenSpec, pasos aprobados, archivos) se agrega debajo.
 
-Requiere `gh` autenticado (`gh auth login`) y un remoto `origin`. Si algo falla, el `output/` ya está copiado y solo se
+Requiere `gh` autenticado (`gh auth login`) y un remoto `origin`; si `origin` es otro repo, debe ser un fork del destino. Si algo falla, el `output/` ya está copiado y solo se
 informa el error. `WALLEE_PUBLISH=false` omite todo este paso.
 Consulta [TEAM.md](TEAM.md) para crear el repo de tu equipo y repartir los archivos.
 

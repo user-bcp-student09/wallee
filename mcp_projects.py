@@ -345,7 +345,42 @@ def _normalize_project_item(it: dict) -> dict:
         "title":      title,
         "number":     number,
         "state":      state,
+        "status":     _status_of(field_values),
     }
+
+
+STATUS_TODO, STATUS_IN_PROGRESS, STATUS_DONE = "Todo", "In Progress", "Done"
+STATUSES = (STATUS_TODO, STATUS_IN_PROGRESS, STATUS_DONE)
+
+
+def _status_of(field_values: dict) -> str:
+    """Estado del item en el Project: el campo «Status» (filter_items) o el valor que coincide con un estado
+    conocido (list_items solo trae los campos por id)."""
+    if field_values.get("Status"):
+        return str(field_values["Status"])
+    return next((v for v in field_values.values() if v in STATUSES), "")
+
+
+def status_field_id(project_id: str) -> str | None:
+    """Id del campo Status del Project, deducido de list_items (que indexa los campos por id)."""
+    result = call_tool("manage_project", {"action": "list_items", "projectId": project_id, "limit": 100})
+    rows = result if isinstance(result, list) else result.get("items", [])
+    for row in rows:
+        for field_id, value in (row.get("fieldValues") or {}).items():
+            if value in STATUSES and field_id != "Status":
+                return field_id
+    return None
+
+
+def set_item_status(project_id: str, item_id: str, status: str) -> None:
+    """Cambia el estado (Todo / In Progress / Done) de un item del Project vía manage_project.set_field_value."""
+    if status not in STATUSES:
+        raise ValueError(f"Estado desconocido: {status}")
+    field_id = status_field_id(project_id)
+    if not field_id:
+        raise RuntimeError("[MCP Proyectos] No se encontró el campo Status del proyecto")
+    call_tool("manage_project", {"action": "set_field_value", "projectId": project_id,
+                                 "itemId": item_id, "fieldId": field_id, "value": status})
 
 
 def list_project_items(project_id: str, limit: int = 100) -> list[dict]:
@@ -361,7 +396,7 @@ def list_project_items(project_id: str, limit: int = 100) -> list[dict]:
     corresponde (antes se tragaba el error silenciosamente y devolvía backlog
     vacío aunque el proyecto tuviera items).
 
-    Retorna: [{"id", "contentId", "type", "title", "number", "state"}, ...]
+    Retorna: [{"id", "contentId", "type", "title", "number", "state", "status"}, ...]
     """
     attempts = [
         {"action": "filter_items", "projectId": project_id, "filter": {}},

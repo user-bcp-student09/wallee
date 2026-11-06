@@ -48,6 +48,10 @@ def list_changes(base: Path) -> list:
     return result
 
 
+def find_change(base: Path, name: str | None) -> Change | None:
+    return next((change for change in list_changes(base) if change.name == name), None)
+
+
 def select_change(base: Path, ask=ui.prompt) -> Change | None:
     """Pide el cambio OpenSpec de trabajo. WALLEE_OPENSPEC_CHANGE (nombre o none) omite la pregunta."""
     changes = list_changes(base)
