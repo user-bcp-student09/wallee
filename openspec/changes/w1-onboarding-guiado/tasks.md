@@ -7,7 +7,7 @@
 
 ## 2. Modelo de datos y mock de identidad (D4, D7)
 
-- [ ] 2.1 [rol: Datos y persistencia] Definir las entidades `Onboarding`, `Wallet` y `OnboardingEvent` con SQLite y verificar que la aplicación arranca y crea las tablas
+- [ ] 2.1 [rol: AI Engineer 2] Definir las entidades `Onboarding`, `Wallet` y `OnboardingEvent` con SQLite y verificar que la aplicación arranca y crea las tablas
 - [ ] 2.2 [rol: AI Engineer 1; diseño: Architect; prueba: QA & Security] Implementar el mock de identidad (KYC acepta formato válido; OTP `123456`; valor fijo en configuración y solo fuera de producción) y verificar con una prueba unitaria que el código correcto pasa y uno distinto falla (cubre el requisito de verificación simulada)
 
 ## 3. Pasos y validación — W1-AC1, W1-AC2 (D2, D3, D5, D6)
