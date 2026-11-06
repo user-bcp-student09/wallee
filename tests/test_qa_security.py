@@ -271,8 +271,9 @@ class QaSecurityProjectMapTests(unittest.TestCase):
         "qa": {"branch": "qa-security",
                "tests": {"backend_e2e": "backend/test/<f>.e2e-spec.ts", "backend_unit": "backend/src/<f>/<n>.spec.ts",
                          "frontend": "frontend/src/<f>/<N>.test.tsx"},
-               "run_tests_command": "python tools/wallee.py test", "test_plan": "docs/qa/p.md",
-               "evidence": "docs/qa/evidence.md", "security_review": "docs/qa/s.md", "decisions": "docs/qa/d.md"},
+               "run_tests_command": "python tools/wallee.py test", "test_plan": "backend/test/p.md",
+               "evidence": "backend/test/evidence.md", "security_review": "backend/security/s.md",
+               "decisions": "backend/test/d.md"},
     }
 
     def build(self, tmp: str, with_app: bool = True, app_dir: str = "mi-app", branch: str = "qa-security"):
@@ -304,7 +305,7 @@ class QaSecurityProjectMapTests(unittest.TestCase):
         self.assertIn("va a la rama «qa-security» del repositorio de la app (https://github.com/org/mi-app)", context)
         self.assertIn("NO a wallee", context)
         self.assertIn("backend/test/<f>.e2e-spec.ts", context)
-        self.assertIn("evidencia docs/qa/evidence.md", context)
+        self.assertIn("evidencia backend/test/evidence.md", context)
         self.assertIn("Comando de pruebas: python tools/wallee.py test", context)
 
     def test_app_on_another_branch_is_reported_to_the_person_not_asked(self):
@@ -361,11 +362,22 @@ class QaSecurityProjectMapTests(unittest.TestCase):
         self.assertTrue((repo / data["real_vs_mock"]["mock_convention"]).is_file())
         for path in data["qa"]["tests"].values():
             self.assertTrue(path.startswith((data["app"]["backend_dir"] + "/", data["app"]["frontend_dir"] + "/")))
+        target = data["qa"]["output_target_dir"]
+        self.assertEqual(target, data["app"]["backend_dir"])
         for key in ("test_plan", "evidence", "security_review", "decisions"):
-            self.assertTrue(data["qa"][key].startswith(data["qa"]["docs_dir"] + "/"))
-            self.assertIn(data["qa"][key], qa_security.INSTRUCTIONS)
+            self.assertTrue(data["qa"][key].startswith(target + "/"))
+            self.assertIn(data["qa"][key][len(target) + 1:], qa_security.INSTRUCTIONS)
+        for folder in ("test", "security"):
+            self.assertTrue(any(data["qa"][key].startswith(target + "/" + folder + "/")
+                                for key in ("test_plan", "evidence", "security_review", "decisions")))
         for path in data["qa"]["tests"].values():
             self.assertIn(path.split("<")[0], qa_security.INSTRUCTIONS)
+
+    def test_declared_output_folders_follow_the_team_convention(self):
+        from crew.roles import output_folders, report_folder
+
+        self.assertEqual(output_folders(qa_security), ("test", "security"))
+        self.assertEqual(report_folder(qa_security), "specs")
 
     def test_qa_suites_live_in_the_app_repo_not_in_wallee(self):
         self.assertFalse((Path(qa_security.ROOT) / "tests" / "qa").exists())
