@@ -49,7 +49,7 @@
     "Decisiones del Product Owner humano",
     "openspec/changes/* (cambios activos del sprint)",
     "challenge/epic y challenge/user-stories (documentos originales del reto)",
-    "challenge/docs/discovery (derivado del reto, estado propuesto hasta que el PO lo confirme)",
+    "challenge/docs/discovery (derivado del reto; supuestos PA-01 a PA-10 aprobados por el PO en DEC-04 y DEC-05)",
     "El código de la app es lo que se prueba, no la verdad: si difiere del spec se reporta un BUG-xx"
   ],
   "real_vs_mock": {

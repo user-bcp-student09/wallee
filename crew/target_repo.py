@@ -6,11 +6,14 @@ import shutil
 from pathlib import Path
 
 from crew import ui
+from crew.scaffold import BACKEND_DIR, FRONTEND_DIR
 
 # Carpetas de participante: T52415-Samuel-Luis-Mendoza, u17721-gladys-patino-abanto, ...
 PARTICIPANT_PATTERN = re.compile(r"^[A-Za-z]\d{3,}(-[A-Za-z0-9]+)+$")
 SKIPPED_OUTPUT_FILES = {".checkpoint.json"}
 SKIPPED_OUTPUT_DIRS = {"node_modules", "dist"}
+SCAFFOLD_DIRS = {BACKEND_DIR, FRONTEND_DIR}
+OWN_LAYOUT_DIRS = ("backend", "frontend")
 
 
 def documents_root(start: Path | None = None) -> Path:
@@ -87,15 +90,31 @@ def select_target_repo(source_repo: Path, ask=ui.prompt) -> Path:
     return target
 
 
+def has_own_layout(target_repo: Path) -> bool:
+    """True si el destino ya tiene su propio backend/ o frontend/ (por ejemplo wallee-app)."""
+    return any((target_repo / name).is_dir() for name in OWN_LAYOUT_DIRS)
+
+
 def copy_output(output_dir: Path, target_repo: Path) -> list[Path]:
-    """Copia output/ en la raíz del repositorio destino (fusiona, sobrescribe, omite el checkpoint)."""
+    """Copia output/ en la raíz del repositorio destino (fusiona, sobrescribe, omite el checkpoint).
+
+    Si el destino ya tiene backend/ o frontend/, no copia el andamiaje backend-nestjs/ y frontend-react/
+    para no crear carpetas duplicadas junto a las suyas.
+    """
+    skipped_dirs = SCAFFOLD_DIRS if has_own_layout(target_repo) else set()
     copied: list[Path] = []
+    omitted: set[str] = set()
     for src in sorted(output_dir.rglob("*")):
         rel = src.relative_to(output_dir)
         if not src.is_file() or rel.name in SKIPPED_OUTPUT_FILES or SKIPPED_OUTPUT_DIRS & set(rel.parts):
+            continue
+        if rel.parts[0] in skipped_dirs:
+            omitted.add(rel.parts[0])
             continue
         dest = target_repo / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         copied.append(rel)
+    if omitted:
+        print(f"  Se omiten {', '.join(sorted(omitted))}/: {target_repo.name} ya tiene su propio backend/ o frontend/.")
     return copied

@@ -67,7 +67,11 @@ a la raíz de la app y siguen el contrato de la app (su AGENTS.md).
    - Cada `Scenario` es un resultado esperado verificable: deriva de él tus T2 (camino principal) y T3 (bordes y
      errores). Los valores límite salen de las reglas de validación del Requirement.
    - Revisa que la cláusula «verificar ...» de cada tarea de `tasks.md` quede cubierta por al menos un caso tuyo.
-     Las tareas T1 son del AI Engineer: no las marques hechas ni las escribas.
+     Cada tarea trae su responsable: `[rol: ...; prueba: QA & Security]`. Las tuyas son las que te nombran como
+     prueba, verificación o rol (p. ej. 2.2, 3.x, 4.x, 5.1, 6.1 a 6.3, 7.1 y la verificación de 7.2). Las partes de
+     construcción (T1) son del AI Engineer, Datos, Architect o Presenter: no las marques hechas, no las cierres ni
+     las escribas. Una tarea tuya solo se marca hecha cuando existe código que la sustente y hay salida real aportada
+     por la persona; mientras tanto informa «pendiente» o «bloqueada por <tarea>».
    - Lo que `proposal.md` declare «Fuera de alcance» NO se prueba. `openspec/changes/archive/` y
      `openspec/specs/` son sprints ya cerrados o especificaciones vigentes: solo regresión mínima.
    - Los criterios (CA-n), alcance y decisiones del PO también mandan. Relaciona cada requirement/CA-n con su ID
@@ -86,9 +90,11 @@ a la raíz de la app y siguen el contrato de la app (su AGENTS.md).
 - Convención de IDs `Wx-ACn-Tm` (o el prefijo de HU que use el spec): T1 = construir (AI Engineer 1/2),
   T2 = probar el AC (TÚ), T3 = caso de borde (TÚ). Tus casos son los T2/T3; no escribas T1. Nombra cada test con
   ese ID (ej. "W4-AC2-T2 same key x3"). Si falta un ID, propón uno marcado PROPUESTO.
-- Cuando apliquen a las HU del alcance: las cifras y supuestos (S/ 500 = RN-01, ventana 24 h = RN-02, saldo =
-  RN-18, mapeo del mock RN-08, etiquetas exitoso/fallido/expirado) están PROPUESTO hasta que el humano los
-  confirme (PA-02, PA-04, PA-08, PA-10): pruébalos y deja constancia de «PENDIENTE DE CONFIRMAR».
+- Cifras y supuestos del discovery (S/ 500 = RN-01, ventana 24 h = RN-02, saldo = RN-18, mapeo del mock RN-08,
+  etiquetas exitoso/fallido/expirado, frontera de eventos de W1): el PO los APROBÓ (DEC-04 y DEC-05, 2026-11-06;
+  PA-01 a PA-10 resueltas). Trátalos como reglas aprobadas, no como pendientes. Lo que `design.md` marque
+  PROPUESTO (pasos del onboarding, campos, documento de 8 dígitos, OTP fijo) sigue por confirmar: pruébalo y deja
+  constancia de «PENDIENTE DE CONFIRMAR».
 - Respeta el estado que declaren el spec y el discovery: un AC marcado PARCIAL (en el discovery: W2-AC6 y W4-AC4)
   nunca se marca COMPLETO. Verifica los eventos que definan las HU del alcance (en el discovery:
   `onboarding_started`, `onboarding_step_completed`, `onboarding_completed`, `payment_succeeded`).

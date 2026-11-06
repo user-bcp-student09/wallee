@@ -51,6 +51,13 @@ class QaSecurityContractTests(unittest.TestCase):
         for expected in ("openspec/changes/<cambio>/", "Scenario", "tasks.md", "Fuera de alcance", "archive"):
             self.assertIn(expected, text)
 
+    def test_instructions_use_po_approvals_and_only_own_tasks(self):
+        text = qa_security.INSTRUCTIONS
+        for expected in ("DEC-04 y DEC-05", "PA-01 a PA-10 resueltas", "[rol: ...; prueba: QA & Security]",
+                         "no las cierres", "pendiente» o «bloqueada por"):
+            self.assertIn(expected, text)
+        self.assertNotIn("están PROPUESTO hasta que el humano los", text)
+
     def test_task_embeds_spec_discovery_and_paths(self):
         task = qa_security.build_task(FEATURE)
         self.assertIs(task.agent, qa_security.agent)
