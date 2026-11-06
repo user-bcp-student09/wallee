@@ -3,7 +3,7 @@
 Los agentes parten con instrucciones básicas. Sigue [Mejora tu agente](MEJORA_TU_AGENTE.md) para completar el ejercicio y consultar resultados desde el portal.
 
 Base de trabajo del Lab 4, S1. Lee una funcionalidad del backlog mediante MCP Projects
-y genera una solución para Wallee con NestJS (backend) y React (frontend) con seis agentes de CrewAI, o siete cuando el equipo activa Datos y persistencia.
+y genera una solución para Wallee con NestJS (backend) y React (frontend) con seis agentes de CrewAI.
 Cada agente tiene su definición y la tarea en un archivo propio.
 
 ## Editar tu agente
@@ -31,7 +31,7 @@ La aprobación humana se conserva entre etapas.
 ## Elegir rol y cambio OpenSpec
 
 La primera vez, `main.py` pregunta **«Selecciona el rol que desea ejecutar»**. La lista sale de los archivos de `agents/`
-(más la opción **Todos**, que corre el flujo completo; `data` entra solo con `CREWAI_INCLUDE_DATA=true`).
+(más la opción **Todos**, que corre el flujo completo).
 Con un solo rol se reutiliza el contexto de los demás (checkpoint o informes ya generados en `output/`).
 Después pregunta el cambio de `openspec/changes/` (lo que muestra `openspec list`); su propuesta, specs, diseño y las
 tareas con `[rol: ...]` de ese rol se agregan al prompt. Para omitir las preguntas: `WALLEE_ROLE` (clave del rol o `all`)
@@ -45,7 +45,7 @@ Carpeta del informe en /output: specs
 ```
 
 Por defecto: `qa_security` → `test` y `security`; `ai_engineer_1` y `ai_engineer_2` → `backend-nestjs` y `frontend-react`;
-`data` → `db`; `product_owner`, `architect` y `presenter` → `specs`. Los `.md` solo se guardan si su ruta empieza con
+`product_owner`, `architect` y `presenter` → `specs`. Los `.md` solo se guardan si su ruta empieza con
 una carpeta declarada (por ejemplo `// security/security-review.md`).
 
 ## Selección guardada
@@ -198,21 +198,3 @@ Sustituyen las llamadas al modelo y a MCP para ejecutarse sin credenciales.
 La ejecución real de Copilot y MCP requiere el entorno del taller.
 
 Consulta [SOURCE.md](SOURCE.md) para ver el origen de esta copia.
-
-## Equipo de siete (solo CrewAI)
-
-El grupo de siete añade un responsable de **Datos y persistencia**, que edita
-únicamente `agents/data.py` y entrega su propio PR. Los equipos de seis mantienen
-sus seis roles. En `team.json`, solo el equipo de siete añade `"data": "usuario-real"`
-dentro de `roles`, con un usuario distinto de los otros responsables.
-
-Antes de iniciar un flujo nuevo, el líder del equipo de siete configura
-`CREWAI_INCLUDE_DATA=true` en su `.env`. El orden será Product Owner → Architect → Datos y
-persistencia → AI Engineer 1 → AI Engineer 2 → QA & Security → Presenter. Cada etapa
-mantiene aprobación, rechazo y reintento humanos. Datos produce `output/specs/data_spec.md`
-y propuestas SQL en `output/db/`; no ejecuta migraciones. AI Engineer 1 usa ese contrato
-y QA & Security lo revisa. Los participantes mejoran las instrucciones iniciales de su agente.
-
-Por defecto la variable es `false`. Un checkpoint de seis etapas no se reutiliza
-en el flujo de siete ni viceversa: conserva la carpeta `output/` con otro nombre
-antes de cambiar el modo. No borres evidencia previa para cambiar de flujo.
