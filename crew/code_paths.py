@@ -7,6 +7,10 @@ from crew.scaffold import BACKEND_DIR, FRONTEND_DIR
 
 FILENAME_PATTERN = r"[a-zA-Z0-9_.\-/]+\.(?:tsx|ts|html|css|sql|json)(?![a-zA-Z0-9_])"
 
+# Raíces de proyecto que se respetan tal cual: las del andamiaje de wallee y las del repositorio de la app
+# (backend/ y frontend/), para que la copia de output/ no las mueva a carpetas equivocadas.
+PROJECT_DIRS = (BACKEND_DIR, FRONTEND_DIR, "backend", "frontend")
+
 _FRONT_EVIDENCE = re.compile(
     r"""['"](?:react(?:-dom|-router-dom)?(?:/[\w-]+)?|vitest|@testing-library/[\w-]+)['"]|import\.meta\.env"""
 )
@@ -75,7 +79,7 @@ def resolve_destination(target: str, code: str, slug: str) -> str | None:
     ext = name.rsplit(".", 1)[-1].lower()
     if ext == "sql":
         return f"db/{name}"
-    if parts[0] in (BACKEND_DIR, FRONTEND_DIR):
+    if parts[0] in PROJECT_DIRS:
         return raw if len(parts) > 1 else None
     if ext == "json":
         return None  # package.json y tsconfig solo se aceptan con la ruta del proyecto explícita

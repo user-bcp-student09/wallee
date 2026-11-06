@@ -16,6 +16,16 @@ class CodePathTests(unittest.TestCase):
             "frontend-react/package.json",
         )
 
+    def test_app_repository_roots_are_kept(self):
+        for target in ("backend/test/onboarding.e2e-spec.ts", "frontend/src/onboarding/Onboarding.test.tsx",
+                       "backend/src/wallet/wallet.service.ts"):
+            self.assertEqual(resolve_destination(target, "", "x"), target)
+        self.assertEqual(resolve_destination("output/backend/test/a.e2e-spec.ts", "", "x"), "backend/test/a.e2e-spec.ts")
+
+    def test_app_repository_roots_still_reject_unsafe_or_bare_roots(self):
+        for target in ("backend", "frontend/../../x.ts", "backend/../x.ts"):
+            self.assertIsNone(resolve_destination(target, "", "x"), target)
+
     def test_unsafe_paths_are_rejected(self):
         for target in ("../x.ts", "/etc/x.ts", "C:/x.ts", "frontend-react/../../x.ts"):
             self.assertIsNone(resolve_destination(target, "", "x"), target)
